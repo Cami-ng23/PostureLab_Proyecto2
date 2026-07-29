@@ -24,6 +24,8 @@
       </div>
 
       <div id="status-card" class="pl-card">
+        <div class="pl-bar thin pl-card-progress"><div id="progress-bar" class="pl-bar-fill gradient"></div></div>
+
         <div class="pl-card-top">
           <svg id="status-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ADE9C" stroke-width="2"></svg>
           <span id="status-tag" class="pl-tag">Estado correcto</span>
@@ -47,13 +49,7 @@
         </div>
       </div>
 
-      <div class="pl-scan">
-        <div class="pl-scan-row">
-          <span class="mono">ESCANEANDO</span>
-          <span class="mono">3s / ciclo</span>
-        </div>
-        <div class="pl-bar thin"><div id="progress-bar" class="pl-bar-fill gradient"></div></div>
-      </div>
+      <p class="pl-hint">Toca una zona del modelo para ver sus riesgos.</p>
 
       <div class="pl-legend">
         <span><i class="dot" style="background:#4ADE9C"></i>Correcto</span>
@@ -68,7 +64,6 @@
 
       <div class="pl-footer">
         Modelo real: <code>posturelab_mannequin.glb</code> (maniquí "primitive_realistic" recortado del bundle, ~0.42MB).
-        Pose sentada, con asiento de referencia.
       </div>
     </aside>
 
@@ -78,6 +73,12 @@
         rotación automática · 360°
       </div>
       <canvas id="scene"></canvas>
+
+      <div id="zone-popup" class="pl-zone-popup" hidden>
+        <div id="zone-popup-title" class="pl-zone-popup-title"></div>
+        <div id="zone-popup-status" class="pl-zone-popup-status mono"></div>
+        <p id="zone-popup-risk" class="pl-zone-popup-risk"></p>
+      </div>
     </main>
 
   </div>

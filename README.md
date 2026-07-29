@@ -22,7 +22,7 @@ posturelab-flask/
 
 ```bash
 cd posturelab-flask
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate        # en Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python3 app.py

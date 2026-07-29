@@ -14,35 +14,36 @@ const GOOD = "#4ADE9C";
 const BAD = "#FF5A5F";
 const REF = "#39445A";
 
-// nombre exacto del nodo en el .glb -> zona postural que representa
+// nombre(s) exacto(s) de nodo en el .glb -> zona postural que representa.
+// Algunas zonas pintan más de un nodo: el hombro real ("shoulder") es una
+// tapa pequeña casi tapada por el brazo, así que coloreamos también el
+// brazo superior para que el cambio de color se note al mirar el modelo.
 const ZONE_NODE_NAMES = {
-  head: "GEO-head_male_primitive_realistic",
-  neck: "GEO-neck_male_primitive_realistic",
-  shoulderL: "GEO-shoulder_male_primitive_realistic.L",
-  shoulderR: "GEO-shoulder_male_primitive_realistic.R",
-  upperSpine: "GEO-chest_male_primitive_realistic",
-  lowerSpine: "GEO-belly_male_primitive_realistic",
+  head: ["GEO-head_male_primitive_realistic"],
+  neck: ["GEO-neck_male_primitive_realistic"],
+  shoulderL: [
+    "GEO-shoulder_male_primitive_realistic.L",
+    "GEO-arm_upper_male_primitive_realistic.L",
+    "GEO-arm_lower_male_primitive_realistic.L",
+  ],
+  shoulderR: [
+    "GEO-shoulder_male_primitive_realistic.R",
+    "GEO-arm_upper_male_primitive_realistic.R",
+    "GEO-arm_lower_male_primitive_realistic.R",
+  ],
+  upperSpine: ["GEO-chest_male_primitive_realistic"],
+  lowerSpine: ["GEO-belly_male_primitive_realistic"],
 };
 const ZONE_KEYS = Object.keys(ZONE_NODE_NAMES);
 
-/* --------------------- pose sentado (permanente) ---------------------
-   El proyecto es sobre postura AL ESTAR SENTADO, así que doblamos las
-   piernas una sola vez al cargar el modelo (no es parte del ciclo de
-   3s de estados, que sigue siendo solo cuello/hombros/torso).
-   Convención de ángulos: en este .glb, rotation.x positivo = la punta
-   del hueso se inclina hacia adelante (mismo criterio que ya usa el
-   torso/cuello más abajo). Cadera -90° + rodilla +90° = "L" de sentado
-   con la pantorrilla otra vez vertical. Si al verlo las piernas quedan
-   apuntando para atrás o el pie no toca el piso, solo invierte el signo
-   de SIT_HIP y SIT_KNEE (son las dos únicas líneas a tocar).
------------------------------------------------------------------------- */
-const SIT_HIP = -Math.PI / 2; // flexión de cadera
-const SIT_KNEE = Math.PI / 2; // flexión de rodilla (relativa al muslo)
-const LEG_NODE_NAMES = {
-  hipL: "GEO-leg_upper_male_primitive_realistic.L",
-  hipR: "GEO-leg_upper_male_primitive_realistic.R",
-  kneeL: "GEO-leg_lower_male_primitive_realistic.L",
-  kneeR: "GEO-leg_lower_male_primitive_realistic.R",
+// texto breve para el panel que aparece al hacer click en una zona
+const ZONE_INFO = {
+  head: { label: "Cabeza", risk: "Llevar la cabeza muy adelantada cansa el cuello y puede darte dolores de cabeza seguidos." },
+  neck: { label: "Cuello", risk: "Encorvar el cuello hacia adelante por mucho rato puede darte dolor de cuello y dolores de cabeza." },
+  shoulderL: { label: "Hombro izquierdo", risk: "Cargar más un hombro que el otro puede generar dolor que se corre hasta el brazo." },
+  shoulderR: { label: "Hombro derecho", risk: "Cargar más un hombro que el otro puede generar dolor que se corre hasta el brazo." },
+  upperSpine: { label: "Espalda alta", risk: "Encorvar la espalda alta puede generar dolor de espalda y hacer que te canses más rápido." },
+  lowerSpine: { label: "Espalda baja", risk: "Estar mal sentado presiona la espalda baja y con el tiempo puede darte dolor lumbar." },
 };
 
 const STATES = [
@@ -61,10 +62,20 @@ const STATES = [
     label: "Cuello proyectado hacia adelante",
     desc: "El ángulo cervical supera el umbral de 20° — la cabeza se adelanta respecto a los hombros.",
     ok: false,
-    zones: ["neck", "head"],
+    zones: ["neck"],
     metric: { name: "Ángulo cervical", value: "27°", limit: "20°", within: false },
     metric2: { name: "Inclinación de torso", value: "4°", limit: "15°", within: true },
     pose: { neck: 0.45, torso: 0, shoulderTilt: 0 },
+  },
+  {
+    id: "neck_head",
+    label: "Cabeza y cuello proyectados hacia adelante",
+    desc: "El ángulo cervical es más severo y ya compromete también la posición de la cabeza.",
+    ok: false,
+    zones: ["neck", "head"],
+    metric: { name: "Ángulo cervical", value: "32°", limit: "20°", within: false },
+    metric2: { name: "Inclinación de torso", value: "4°", limit: "15°", within: true },
+    pose: { neck: 0.6, torso: 0, shoulderTilt: 0 },
   },
   {
     id: "shoulders",
@@ -91,7 +102,7 @@ const STATES = [
     label: "Postura encorvada (patrón combinado)",
     desc: "Cuello y espalda superan sus umbrales a la vez — típico de fatiga prolongada frente al monitor.",
     ok: false,
-    zones: ["neck", "head", "upperSpine"],
+    zones: ["neck", "upperSpine"],
     metric: { name: "Ángulo cervical", value: "24°", limit: "20°", within: false },
     metric2: { name: "Inclinación de torso", value: "18°", limit: "15°", within: false },
     pose: { neck: 0.38, torso: 0.2, shoulderTilt: 0.06 },
@@ -101,16 +112,21 @@ const STATES = [
 /* ---------------------------- estado UI ---------------------------- */
 
 let stateIdx = 0;
-let cycleStart = performance.now();
+let cycleElapsed = 0;
+let paused = false; // se pausa el ciclo mientras el usuario inspecciona una zona
 const zoneTargets = {};
 const poseTarget = { neck: 0, torso: 0, shoulderTilt: 0 };
 const poseCurrent = { neck: 0, torso: 0, shoulderTilt: 0 };
-const zoneObjects = {};
+const zoneObjects = {}; // zona -> array de meshes
+const meshToZone = new Map(); // mesh -> zona (para el raycaster de click)
 let poseNodes = {};
 let rimLight = null;
 let rimTarget = new THREE.Color(GOOD);
 let rimCurrent = new THREE.Color(GOOD);
 let history = [];
+let activeZone = null;
+let lastPopupX = 0;
+let lastPopupY = 0;
 
 const el = {
   statusCard: document.getElementById("status-card"),
@@ -127,6 +143,10 @@ const el = {
   progressBar: document.getElementById("progress-bar"),
   historyList: document.getElementById("history-list"),
   modelError: document.getElementById("model-error"),
+  zonePopup: document.getElementById("zone-popup"),
+  zonePopupTitle: document.getElementById("zone-popup-title"),
+  zonePopupStatus: document.getElementById("zone-popup-status"),
+  zonePopupRisk: document.getElementById("zone-popup-risk"),
 };
 
 const ICON_OK = `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`;
@@ -166,20 +186,91 @@ function applyStateIndex(idx) {
         `<div class="pl-history-row"><i class="dot" style="background:${h.ok ? GOOD : BAD}"></i>${h.label}</div>`
     )
     .join("");
+
+  // si el popup de una zona está abierto, refrescamos su estado por si cambió
+  if (activeZone) openZonePopup(activeZone, lastPopupX, lastPopupY);
 }
 
 applyStateIndex(0);
-setInterval(() => {
-  stateIdx = (stateIdx + 1) % STATES.length;
-  cycleStart = performance.now();
-  applyStateIndex(stateIdx);
-}, CYCLE_MS);
 
-(function tickProgress() {
-  const elapsed = performance.now() - cycleStart;
-  el.progressBar.style.width = `${Math.min(100, (elapsed / CYCLE_MS) * 100)}%`;
-  requestAnimationFrame(tickProgress);
-})();
+/* -------------------- ciclo + progreso (pausable) -------------------- */
+
+function tickCycle(dt) {
+  if (paused) return;
+  cycleElapsed += dt;
+  el.progressBar.style.width = `${Math.min(100, (cycleElapsed / CYCLE_MS) * 100)}%`;
+  if (cycleElapsed >= CYCLE_MS) {
+    cycleElapsed = 0;
+    stateIdx = (stateIdx + 1) % STATES.length;
+    applyStateIndex(stateIdx);
+  }
+}
+
+/* --------------------- click en una zona -> popup --------------------- */
+
+function openZonePopup(zoneKey, x, y) {
+  activeZone = zoneKey;
+  lastPopupX = x;
+  lastPopupY = y;
+  paused = true;
+
+  const info = ZONE_INFO[zoneKey];
+  const isBad = zoneTargets[zoneKey] === BAD;
+
+  el.zonePopupTitle.textContent = info.label;
+  el.zonePopupStatus.textContent = isBad ? "Zona con riesgo detectado ahora" : "Dentro de rango saludable ahora";
+  el.zonePopupStatus.style.color = isBad ? BAD : GOOD;
+  el.zonePopupRisk.textContent = info.risk;
+  el.zonePopup.classList.toggle("bad", isBad);
+  el.zonePopup.hidden = false;
+
+  const wrap = document.querySelector(".pl-canvas-wrap");
+  const rect = wrap.getBoundingClientRect();
+  const popupWidth = 240;
+  let left = x - rect.left + 16;
+  let top = y - rect.top - 10;
+  if (left + popupWidth > rect.width) left = x - rect.left - popupWidth - 16;
+  if (left < 8) left = 8;
+  if (top < 8) top = 8;
+  if (top > rect.height - 140) top = rect.height - 140;
+  el.zonePopup.style.left = `${left}px`;
+  el.zonePopup.style.top = `${top}px`;
+}
+
+function closeZonePopup() {
+  activeZone = null;
+  paused = false;
+  el.zonePopup.hidden = true;
+}
+
+const raycaster = new THREE.Raycaster();
+const pointerNDC = new THREE.Vector2();
+
+function zoneAtEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    return null;
+  }
+  pointerNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointerNDC, camera);
+  const hits = raycaster.intersectObjects(root.children, true);
+  for (const hit of hits) {
+    const zone = meshToZone.get(hit.object);
+    if (zone) return zone;
+  }
+  return null;
+}
+
+document.addEventListener("click", (e) => {
+  if (el.zonePopup.contains(e.target)) return; // click dentro del popup: no hacer nada
+  const zone = zoneAtEvent(e);
+  if (zone) {
+    openZonePopup(zone, e.clientX, e.clientY);
+  } else {
+    closeZonePopup();
+  }
+});
 
 /* ------------------------------ escena ------------------------------ */
 
@@ -190,8 +281,8 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x0b1119, 4, 12);
 
 const camera = new THREE.PerspectiveCamera(38, wrap.clientWidth / wrap.clientHeight, 0.1, 100);
-camera.position.set(0, 1.35, 5.2);
-camera.lookAt(0, 1.05, 0);
+camera.position.set(0, 1.25, 3.9);
+camera.lookAt(0, 1.0, 0);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -223,38 +314,6 @@ window.addEventListener("resize", () => {
   renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 });
 
-function addChair(seatY) {
-  const chairMat = new THREE.MeshStandardMaterial({
-    color: 0x2a3348,
-    roughness: 0.7,
-    metalness: 0.1,
-  });
-  const chair = new THREE.Group();
-
-  const seatThickness = 0.05;
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, seatThickness, 0.48), chairMat);
-  seat.position.set(0, seatY - seatThickness / 2, 0.02);
-  chair.add(seat);
-
-  const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.55, 0.05), chairMat);
-  backrest.position.set(0, seatY + 0.27, -0.2);
-  chair.add(backrest);
-
-  const legOffsets = [
-    [0.2, 0.2],
-    [-0.2, 0.2],
-    [0.2, -0.18],
-    [-0.2, -0.18],
-  ];
-  legOffsets.forEach(([x, z]) => {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, seatY - seatThickness, 12), chairMat);
-    leg.position.set(x, (seatY - seatThickness) / 2, z);
-    chair.add(leg);
-  });
-
-  scene.add(chair);
-}
-
 const loader = new GLTFLoader();
 loader.load(
   window.PL_GLB_URL || "/static/assets/posturelab_mannequin.glb",
@@ -272,8 +331,17 @@ loader.load(
     });
 
     ZONE_KEYS.forEach((z) => {
-      const obj = model.getObjectByName(ZONE_NODE_NAMES[z]);
-      if (obj) zoneObjects[z] = obj;
+      const found = [];
+      ZONE_NODE_NAMES[z].forEach((name) => {
+        const obj = model.getObjectByName(name);
+        if (obj) {
+          found.push(obj);
+          meshToZone.set(obj, z);
+        } else {
+          console.warn(`[PostureLab] no se encontró el nodo "${name}" (zona "${z}")`);
+        }
+      });
+      zoneObjects[z] = found;
     });
 
     const pelvis = model.getObjectByName("GEO-pelvis_male_primitive_realistic");
@@ -290,7 +358,6 @@ loader.load(
       shoulderR: shoulderRNode ? { node: shoulderRNode, rest: shoulderRNode.rotation.clone() } : null,
     };
 
-    // 1) escala calculada sobre la pose de pie original (altura real del cuerpo)
     const box = new THREE.Box3().setFromObject(model);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -298,16 +365,6 @@ loader.load(
     const scale = size.y > 0 ? targetHeight / size.y : 1;
     model.scale.setScalar(scale);
 
-    // 2) doblamos las piernas UNA VEZ para dejarlo sentado (ver SIT_HIP/SIT_KNEE arriba)
-    Object.entries(LEG_NODE_NAMES).forEach(([key, name]) => {
-      const node = model.getObjectByName(name);
-      if (!node) return;
-      const isKnee = key.startsWith("knee");
-      node.rotation.x += isKnee ? SIT_KNEE : SIT_HIP;
-    });
-
-    // 3) recién ahora centramos y apoyamos los pies en el piso, con las piernas
-    //    ya dobladas (si no, el auto-grounding usaría la altura de pie, no la sentada)
     const box2 = new THREE.Box3().setFromObject(model);
     const center2 = new THREE.Vector3();
     box2.getCenter(center2);
@@ -316,15 +373,6 @@ loader.load(
     model.position.y -= box2.min.y;
 
     root.add(model);
-
-    // 4) asiento simple como referencia visual (altura = cadera del maniquí ya sentado)
-    const pelvisNode = model.getObjectByName("GEO-pelvis_male_primitive_realistic");
-    if (pelvisNode) {
-      const hipWorld = new THREE.Vector3();
-      pelvisNode.getWorldPosition(hipWorld);
-      addChair(hipWorld.y);
-    }
-
     animate();
   },
   undefined,
@@ -344,7 +392,9 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const LERP = 1 - Math.pow(0.001, dt);
 
-  root.rotation.y += dt * 0.5;
+  tickCycle(dt * 1000);
+
+  if (!paused) root.rotation.y += dt * 0.5;
 
   poseCurrent.neck += (poseTarget.neck - poseCurrent.neck) * LERP;
   poseCurrent.torso += (poseTarget.torso - poseCurrent.torso) * LERP;
@@ -356,16 +406,17 @@ function animate() {
   if (poseNodes.shoulderR) poseNodes.shoulderR.node.rotation.z = poseNodes.shoulderR.rest.z + poseCurrent.shoulderTilt;
 
   ZONE_KEYS.forEach((z) => {
-    const obj = zoneObjects[z];
-    if (!obj || !obj.material) return;
     const targetHex = zoneTargets[z] || GOOD;
     const targetColor = new THREE.Color(targetHex);
     currentColors[z].lerp(targetColor, LERP);
-    obj.material.color.copy(currentColors[z]);
     const isBad = targetHex === BAD;
     const emissiveTarget = isBad ? new THREE.Color(BAD) : new THREE.Color(0x000000);
-    obj.material.emissive.lerp(emissiveTarget, LERP);
-    obj.material.emissiveIntensity = 0.5;
+    (zoneObjects[z] || []).forEach((obj) => {
+      if (!obj.material) return;
+      obj.material.color.copy(currentColors[z]);
+      obj.material.emissive.lerp(emissiveTarget, LERP);
+      obj.material.emissiveIntensity = 0.5;
+    });
   });
 
   rimCurrent.lerp(rimTarget, LERP);
