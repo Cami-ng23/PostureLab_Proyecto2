@@ -9,10 +9,22 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 /* ------------------------------------------------------------------ */
 
 const CYCLE_MS = 3000;
-const NEUTRAL = "#4C5A6E";
-const GOOD = "#4ADE9C";
-const BAD = "#FF5A5F";
-const REF = "#39445A";
+const NEUTRAL = "#334155";
+const GOOD = "#10B981";
+const BAD = "#EF4444";
+const REF = "#475569";
+
+// GLTFLoader sanea node.name quitando los puntos (los usa como separador de
+// rutas de animación), así que "shoulder.L" termina en el árbol como
+// "shoulderL". El nombre ORIGINAL del glTF queda igual en userData.name,
+// así que buscamos por ahí en vez de por node.name / getObjectByName.
+function findByOriginalName(root, name) {
+  let found = null;
+  root.traverse((child) => {
+    if (!found && child.userData && child.userData.name === name) found = child;
+  });
+  return found;
+}
 
 // nombre(s) exacto(s) de nodo en el .glb -> zona postural que representa.
 // Algunas zonas pintan más de un nodo: el hombro real ("shoulder") es una
@@ -289,19 +301,19 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 renderer.setClearColor(0x000000, 0);
 
-const ambient = new THREE.AmbientLight(0x8fa3c0, 0.7);
+const ambient = new THREE.AmbientLight(0x3b5c8f, 0.7);
 scene.add(ambient);
-const key = new THREE.DirectionalLight(0xffffff, 0.9);
+const key = new THREE.DirectionalLight(0xf8fafc, 0.9);
 key.position.set(2.2, 3.5, 3);
 scene.add(key);
-const fill = new THREE.DirectionalLight(0x6f88b0, 0.35);
+const fill = new THREE.DirectionalLight(0x22d3ee, 0.3);
 fill.position.set(-3, 1.5, -2);
 scene.add(fill);
 rimLight = new THREE.DirectionalLight(GOOD, 0.9);
 rimLight.position.set(-1.5, 2, -3.5);
 scene.add(rimLight);
 
-const grid = new THREE.GridHelper(9, 18, 0x22334a, 0x17202e);
+const grid = new THREE.GridHelper(9, 18, 0x3b82f6, 0x151c2c);
 grid.position.y = -0.02;
 scene.add(grid);
 
@@ -333,7 +345,7 @@ loader.load(
     ZONE_KEYS.forEach((z) => {
       const found = [];
       ZONE_NODE_NAMES[z].forEach((name) => {
-        const obj = model.getObjectByName(name);
+        const obj = findByOriginalName(model, name);
         if (obj) {
           found.push(obj);
           meshToZone.set(obj, z);
@@ -344,13 +356,13 @@ loader.load(
       zoneObjects[z] = found;
     });
 
-    const pelvis = model.getObjectByName("GEO-pelvis_male_primitive_realistic");
+    const pelvis = findByOriginalName(model, "GEO-pelvis_male_primitive_realistic");
     if (pelvis && pelvis.material) pelvis.material.color.set(REF);
 
-    const neckNode = model.getObjectByName("GEO-neck_male_primitive_realistic");
-    const chestNode = model.getObjectByName("GEO-chest_male_primitive_realistic");
-    const shoulderLNode = model.getObjectByName("GEO-shoulder_male_primitive_realistic.L");
-    const shoulderRNode = model.getObjectByName("GEO-shoulder_male_primitive_realistic.R");
+    const neckNode = findByOriginalName(model, "GEO-neck_male_primitive_realistic");
+    const chestNode = findByOriginalName(model, "GEO-chest_male_primitive_realistic");
+    const shoulderLNode = findByOriginalName(model, "GEO-shoulder_male_primitive_realistic.L");
+    const shoulderRNode = findByOriginalName(model, "GEO-shoulder_male_primitive_realistic.R");
     poseNodes = {
       neck: neckNode ? { node: neckNode, rest: neckNode.rotation.clone() } : null,
       chest: chestNode ? { node: chestNode, rest: chestNode.rotation.clone() } : null,
@@ -366,10 +378,10 @@ loader.load(
     model.scale.setScalar(scale);
 
     const box2 = new THREE.Box3().setFromObject(model);
-    const center2 = new THREE.Vector3();
-    box2.getCenter(center2);
-    model.position.x -= center2.x;
-    model.position.z -= center2.z;
+    const pelvisWorld = new THREE.Vector3();
+    if (pelvis) pelvis.getWorldPosition(pelvisWorld);
+    model.position.x -= pelvisWorld.x;
+    model.position.z -= pelvisWorld.z;
     model.position.y -= box2.min.y;
 
     root.add(model);
