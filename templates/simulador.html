@@ -19,10 +19,16 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           <span>PostureLab · Simulador</span>
         </div>
-        <h1>Sujeto de prueba</h1>
-        <p class="pl-sub">Sin cámara — ciclo automático cada 3s sobre el maniquí real exportado desde Blender.</p>
+        <h1>Escaneo de postura</h1>
+        <p class="pl-sub">Presiona iniciar, quédate 5 segundos frente a la cámara (de frente o de lado, da igual) y mira el diagnóstico sobre el maniquí real exportado desde Blender.</p>
         <p id="model-error" class="pl-error" hidden>No se pudo cargar el modelo 3D (revisa la ruta de static/assets/posturelab_mannequin.glb).</p>
       </div>
+
+      <button id="scan-btn" class="pl-scan-btn" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Iniciar escaneo
+      </button>
+      <p id="camera-error" class="pl-error" hidden></p>
 
       <div id="status-card" class="pl-card">
         <div class="pl-bar thin pl-card-progress"><div id="progress-bar" class="pl-bar-fill gradient"></div></div>
@@ -48,9 +54,16 @@
           </div>
           <div class="pl-bar"><div id="metric2-bar" class="pl-bar-fill"></div></div>
         </div>
+        <div class="pl-metric">
+          <div class="pl-metric-row">
+            <span id="metric3-name" class="pl-metric-name"></span>
+            <span id="metric3-value" class="pl-metric-value mono"></span>
+          </div>
+          <div class="pl-bar"><div id="metric3-bar" class="pl-bar-fill"></div></div>
+        </div>
       </div>
 
-      <p class="pl-hint">Toca una zona del modelo para ver sus riesgos.</p>
+      <p class="pl-hint">Toca una zona del modelo para ver sus riesgos. El resultado del escaneo queda visible 10s.</p>
 
       <div class="pl-legend">
         <span><i class="dot" style="background:#10b981"></i>Correcto</span>
@@ -64,14 +77,14 @@
       </div>
 
       <div class="pl-footer">
-        Modelo real: <code>posturelab_mannequin.glb</code> (maniquí "primitive_realistic" recortado del bundle, ~0.42MB).
+        Modelo real: <code>posturelab_mannequin.glb</code> (maniquí "primitive_realistic" recortado del bundle, ~0.42MB). Escaneo con MediaPipe PoseLandmarker, corre 100% en tu navegador — el video no se envía a ningún servidor.
       </div>
     </aside>
 
     <main class="pl-canvas-wrap">
-      <div class="pl-rotate-tag mono">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>
-        rotación automática · 360°
+      <div id="scan-badge" class="pl-scan-badge mono" hidden>
+        <span class="pl-scan-spinner"></span>
+        <span id="scan-badge-text">Escaneo en progreso · 0%</span>
       </div>
       <div class="pl-halo-glow" aria-hidden="true"></div>
       <div class="pl-halo-beam" aria-hidden="true"></div>
@@ -81,6 +94,10 @@
         <div class="ring"></div>
       </div>
       <canvas id="scene"></canvas>
+
+      <div id="camera-preview" class="pl-camera-preview" hidden>
+        <video id="camera-video" autoplay playsinline muted></video>
+      </div>
 
       <div id="zone-popup" class="pl-zone-popup" hidden>
         <div id="zone-popup-title" class="pl-zone-popup-title"></div>

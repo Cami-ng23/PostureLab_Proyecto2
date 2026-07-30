@@ -1,8 +1,10 @@
 # PostureLab · Simulador (Flask)
 
-Mismo simulador de antes, ahora integrado a una app Flask real en lugar
-de HTML plano. Sin build step: Flask sirve la plantilla y los estáticos,
-y Three.js sigue viniendo por CDN.
+App Flask con escaneo real de postura: presionas "Iniciar escaneo", se
+enciende tu cámara 5 segundos, y MediaPipe PoseLandmarker calcula los
+ángulos de cuello/torso/hombros directamente sobre tus landmarks 3D (no
+importa si estás de frente o de lado). El resultado se pinta sobre el
+maniquí real exportado desde Blender durante 10 segundos.
 
 ## Estructura
 
@@ -11,10 +13,11 @@ posturelab-flask/
 ├── app.py                     <- servidor Flask (2 rutas: / y /simulador)
 ├── requirements.txt
 ├── templates/
-│   └── simulador.html         <- plantilla Jinja (antes index.html)
+│   └── simulador.html         <- plantilla Jinja (botón de escaneo, HUD, preview de cámara)
 └── static/
     ├── css/style.css
-    ├── js/main.js              <- misma lógica de antes (ciclo, colores, carga del modelo)
+    ├── js/main.js              <- UI, flujo idle -> loading -> scanning -> hold, maniquí
+    ├── js/pose-detector.js     <- cámara + MediaPipe PoseLandmarker + cálculo de ángulos
     └── assets/posturelab_mannequin.glb
 ```
 
@@ -23,45 +26,57 @@ posturelab-flask/
 ```bash
 cd posturelab-flask
 python -m venv venv
-source venv/bin/activate        # en Windows: venv\Scripts\activate
+en Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python3 app.py
 ```
 
-Abre `http://127.0.0.1:5000`.
+Abre `http://127.0.0.1:5000` **con HTTPS o en localhost** (el navegador
+solo permite `getUserMedia` en esos dos casos; `127.0.0.1`/`localhost`
+cuentan como "seguro" aunque no tengan certificado).
 
-## Qué cambió respecto a la versión standalone
+## Cómo funciona el escaneo
 
-- `js/main.js`: la carga del `.glb` ahora usa `window.PL_GLB_URL`, que
-  `simulador.html` llena con `{{ url_for('static', filename=...) }}`.
-  Así el archivo se sirve siempre desde la ruta correcta de Flask, sin
-  importar si algún día montas la app bajo un subpath o cambias de
-  estructura de carpetas.
-- CSS y JS pasaron a `static/`, la plantilla a `templates/` — es la
-  convención estándar de Flask, para que cuando agregues más páginas
-  (login, dashboard, historial de evaluaciones) todo viva en el mismo
-  esquema.
+1. Clic en "Iniciar escaneo" → `pose-detector.js` pide permiso de cámara
+   y carga (primera vez) el modelo `pose_landmarker_lite` de MediaPipe
+   desde CDN.
+2. Durante 5s corre `detectForVideo` en cada frame y guarda una muestra
+   de ángulos por frame válido (con hombros/caderas visibles).
+3. Al terminar, calcula la mediana de esas muestras y arma un
+   diagnóstico: ángulo cervical, inclinación de torso, desnivel de
+   hombros, y qué zonas superaron su umbral.
+4. `main.js` pinta esas zonas en rojo sobre el maniquí (o todo verde si
+   la postura es correcta) durante 10s, y después vuelve a "listo".
+
+Los umbrales (20° cuello, 15° torso, 1.5cm hombros) y la forma de medir
+(magnitud del desplazamiento horizontal en 3D respecto a la vertical,
+sin importar hacia dónde mira la cámara) están documentados en
+`static/js/pose-detector.js` — son un punto de partida razonable, pero
+conviene calibrarlos con casos reales antes de usarlos como diagnóstico
+serio.
 
 ## Próximos pasos (según tu documento)
 
 1. **SQLite para evaluaciones**: agrega un modelo simple (puedes usar
    `sqlite3` directo o Flask-SQLAlchemy) con una tabla `evaluaciones`
    (fecha, ángulo cervical, inclinación de torso, zonas afectadas, ok/bad).
-   Cuando el ciclo cambie de estado en `main.js`, puedes hacer un
-   `fetch('/api/evaluacion', {method: 'POST', body: JSON.stringify(s)})`
+   Al terminar cada escaneo en `main.js` (función `finishScan`), puedes
+   hacer un `fetch('/api/evaluacion', {method: 'POST', body: JSON.stringify(diag)})`
    hacia una nueva ruta en `app.py` que inserte esa fila.
-2. **Cámara real + MediaPipe**: reemplaza el `setInterval` de `main.js`
-   por los ángulos calculados en vivo desde los landmarks — el resto del
-   pipeline (colores, pose del maniquí, HUD) no cambia.
-3. **Dashboard**: cuando tengas más de una página, mueve el simulador a
+2. **Dashboard**: cuando tengas más de una página, mueve el simulador a
    `/simulador` (ya está esa ruta lista) y usa `/` para el dashboard con
    el historial guardado en SQLite.
+3. **Calibración**: comparar los ángulos calculados contra mediciones
+   reales (foto de perfil + goniómetro, por ejemplo) para ajustar los
+   umbrales si hace falta.
 
 ## Nota sobre el modelo 3D
 
 Sigue siendo el maniquí procedural "male_primitive_realistic" recortado
 de tu bundle, con 6 zonas mapeadas (`head`, `neck`, `shoulderL`,
 `shoulderR`, `upperSpine`, `lowerSpine` — ver comentario `ZONE_NODE_NAMES`
-en `static/js/main.js`). Si más adelante separas otras zonas en Blender
-(ej. zona lumbar aparte de espalda alta), solo agregas la entrada al
-mapeo y un estado nuevo en `STATES`.
+en `static/js/main.js`). Esa parte no se tocó: sigue siendo la misma
+carga de `.glb`, el mismo mapeo de zonas y el mismo click-to-inspect que
+ya funcionaba. Si más adelante separas otras zonas en Blender (ej. zona
+lumbar aparte de espalda alta), solo agregas la entrada al mapeo y a la
+lógica de diagnóstico en `pose-detector.js`.
