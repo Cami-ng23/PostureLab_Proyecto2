@@ -33,16 +33,8 @@ function findByOriginalName(root, name) {
 const ZONE_NODE_NAMES = {
   head: ["GEO-head_male_primitive_realistic"],
   neck: ["GEO-neck_male_primitive_realistic"],
-  shoulderL: [
-    "GEO-shoulder_male_primitive_realistic.L",
-    "GEO-arm_upper_male_primitive_realistic.L",
-    "GEO-arm_lower_male_primitive_realistic.L",
-  ],
-  shoulderR: [
-    "GEO-shoulder_male_primitive_realistic.R",
-    "GEO-arm_upper_male_primitive_realistic.R",
-    "GEO-arm_lower_male_primitive_realistic.R",
-  ],
+  shoulderL: ["GEO-shoulder_male_primitive_realistic.L"],
+  shoulderR: ["GEO-shoulder_male_primitive_realistic.R"],
   upperSpine: ["GEO-chest_male_primitive_realistic"],
   lowerSpine: ["GEO-belly_male_primitive_realistic"],
 };
