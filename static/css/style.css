@@ -66,9 +66,6 @@ html, body {
   70% { opacity: 0; }
   100% { transform: scale(1.25); opacity: 0; }
 }
-@keyframes pl-btn-spin {
-  to { transform: rotate(360deg); }
-}
 
 .pl-root {
   display: flex;
@@ -150,35 +147,6 @@ html, body {
   font-size: 12px;
   color: var(--bad);
   margin-top: 8px;
-}
-
-/* ---------------------------- botón de escaneo --------------------------- */
-
-.pl-scan-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  width: 100%;
-  padding: 13px 18px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: linear-gradient(90deg, var(--primary), var(--secondary));
-  color: #04121c;
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 14.5px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.28);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
-  animation: pl-fade-up 0.55s ease 0.02s backwards;
-}
-.pl-scan-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(59, 130, 246, 0.36); }
-.pl-scan-btn:active:not(:disabled) { transform: translateY(0); }
-.pl-scan-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-  box-shadow: none;
 }
 
 /* ------------------------------ tarjeta -------------------------------- */
@@ -448,24 +416,37 @@ html, body {
   50% { opacity: 1; }
 }
 
-.pl-rotate-tag {
-  position: absolute;
-  top: 20px;
-  left: 22px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-dim);
-  background: rgba(17, 24, 39, 0.55);
-  border: 1px solid var(--border);
-  backdrop-filter: blur(10px);
-  padding: 6px 12px;
-  border-radius: 999px;
-  z-index: 2;
+.pl-scan-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 13px 18px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+}
+.pl-scan-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(59, 130, 246, 0.38);
+}
+.pl-scan-btn:active:not(:disabled) { transform: translateY(0); }
+.pl-scan-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
-/* ------------------------------ escaneo -------------------------------- */
+.pl-spin {
+  animation: pl-spin-rotate 1.4s linear infinite;
+  transform-origin: center;
+}
+@keyframes pl-spin-rotate {
+  to { transform: rotate(360deg); }
+}
 
 .pl-scan-badge {
   position: absolute;
@@ -473,45 +454,47 @@ html, body {
   left: 22px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  letter-spacing: 0.04em;
+  gap: 6px;
+  font-size: 11px;
   color: var(--secondary);
-  background: rgba(17, 24, 39, 0.65);
-  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(17, 24, 39, 0.55);
+  border: 1px solid rgba(34, 211, 238, 0.3);
   backdrop-filter: blur(10px);
-  padding: 7px 13px;
+  padding: 6px 12px;
   border-radius: 999px;
   z-index: 3;
 }
-.pl-scan-spinner {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid rgba(34, 211, 238, 0.25);
-  border-top-color: var(--secondary);
-  animation: pl-btn-spin 0.8s linear infinite;
-  flex-shrink: 0;
+
+.pl-scan-sweep {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 3px;
+  z-index: 2;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--secondary), var(--primary), var(--secondary), transparent);
+  box-shadow: 0 0 18px 3px rgba(34, 211, 238, 0.55);
+  animation: pl-sweep-move 1.8s ease-in-out infinite;
+}
+@keyframes pl-sweep-move {
+  0% { top: 18%; opacity: 0.4; }
+  50% { top: 82%; opacity: 1; }
+  100% { top: 18%; opacity: 0.4; }
 }
 
 .pl-camera-preview {
   position: absolute;
-  right: 18px;
-  bottom: 18px;
-  width: 132px;
-  height: 99px;
+  bottom: 20px;
+  right: 20px;
+  width: 128px;
+  height: 96px;
+  object-fit: cover;
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  border: 1px solid rgba(34, 211, 238, 0.45);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-soft);
+  transform: scaleX(-1); /* efecto espejo, como una selfie cam */
   z-index: 4;
   background: #000;
-}
-.pl-camera-preview video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1); /* efecto espejo, más natural para el usuario */
 }
 
 #scene {

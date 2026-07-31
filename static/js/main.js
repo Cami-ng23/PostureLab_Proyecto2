@@ -1,26 +1,22 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { PoseWatcher } from "./pose-detector.js";
+import { startCamera, stopCamera, runScan } from "./posture-scan.js";
 
 /* ------------------------------------------------------------------ */
-/*  PostureLab · Simulador con escaneo real de postura (cámara)        */
+/*  PostureLab · Escaneo real de postura con cámara                    */
 /*  Maniquí real "male_primitive_realistic" extraído del bundle de     */
 /*  Blender (assets/posturelab_mannequin.glb, ~0.42MB, sin materiales  */
-/*  -> los pintamos nosotros por zona). El escaneo usa MediaPipe       */
-/*  PoseLandmarker sobre la cámara del usuario durante 5s, y funciona  */
-/*  sin importar el ángulo (de frente o de lado) porque medimos        */
-/*  ángulos relativos entre segmentos del cuerpo en 3D, no contra la   */
-/*  pantalla — ver static/js/pose-detector.js.                         */
+/*  -> los pintamos nosotros por zona).                                */
 /* ------------------------------------------------------------------ */
 
-const SCAN_MS = 5000; // duración del escaneo
-const HOLD_MS = 10000; // cuánto tiempo se muestra el resultado antes de volver a "listo"
-
+const SCAN_MS = 5000;
+const HOLD_MS = 10000;
 const NEUTRAL = "#334155";
-const IDLE_ZONE = "#475569"; // gris: aún no evaluado
 const GOOD = "#10B981";
 const BAD = "#EF4444";
 const REF = "#475569";
+
+const THRESHOLDS = { cervical: 20, torso: 15, shoulder: 6 };
 
 // GLTFLoader sanea node.name quitando los puntos (los usa como separador de
 // rutas de animación), así que "shoulder.L" termina en el árbol como
@@ -41,16 +37,8 @@ function findByOriginalName(root, name) {
 const ZONE_NODE_NAMES = {
   head: ["GEO-head_male_primitive_realistic"],
   neck: ["GEO-neck_male_primitive_realistic"],
-  shoulderL: [
-    "GEO-shoulder_male_primitive_realistic.L",
-    "GEO-arm_upper_male_primitive_realistic.L",
-    "GEO-arm_lower_male_primitive_realistic.L",
-  ],
-  shoulderR: [
-    "GEO-shoulder_male_primitive_realistic.R",
-    "GEO-arm_upper_male_primitive_realistic.R",
-    "GEO-arm_lower_male_primitive_realistic.R",
-  ],
+  shoulderL: ["GEO-shoulder_male_primitive_realistic.L"],
+  shoulderR: ["GEO-shoulder_male_primitive_realistic.R"],
   upperSpine: ["GEO-chest_male_primitive_realistic"],
   lowerSpine: ["GEO-belly_male_primitive_realistic"],
 };
@@ -66,23 +54,11 @@ const ZONE_INFO = {
   lowerSpine: { label: "Espalda baja", risk: "Estar mal sentado presiona la espalda baja y con el tiempo puede darte dolor lumbar." },
 };
 
-// estado "listo, sin escanear todavía" — gris, sin veredicto
-const IDLE_DIAGNOSIS = {
-  label: "Sin escanear todavía",
-  desc: "Presiona “Iniciar escaneo” y quédate cómodo frente a la cámara por 5 segundos.",
-  zones: [],
-  idle: true,
-  pose: { neck: 0, torso: 0, shoulderTilt: 0 },
-};
-
 /* ---------------------------- estado UI ---------------------------- */
 
-let mode = "idle"; // idle | loading | scanning | hold
-let scanElapsed = 0;
+let uiState = "idle"; // idle | scanning | result
 let holdElapsed = 0;
-let lastDiagnosis = IDLE_DIAGNOSIS;
-
-let paused = false; // se pausa la rotación mientras el usuario inspecciona una zona
+let paused = false; // se pausa el hold de resultados mientras se inspecciona una zona
 const zoneTargets = {};
 const poseTarget = { neck: 0, torso: 0, shoulderTilt: 0 };
 const poseCurrent = { neck: 0, torso: 0, shoulderTilt: 0 };
@@ -90,14 +66,15 @@ const zoneObjects = {}; // zona -> array de meshes
 const meshToZone = new Map(); // mesh -> zona (para el raycaster de click)
 let poseNodes = {};
 let rimLight = null;
-let rimTarget = new THREE.Color(IDLE_ZONE);
-let rimCurrent = new THREE.Color(IDLE_ZONE);
+let rimTarget = new THREE.Color(GOOD);
+let rimCurrent = new THREE.Color(GOOD);
 let history = [];
 let activeZone = null;
 let lastPopupX = 0;
 let lastPopupY = 0;
+let lastResult = null;
 
-const poseWatcher = new PoseWatcher();
+ZONE_KEYS.forEach((z) => (zoneTargets[z] = GOOD));
 
 const el = {
   statusCard: document.getElementById("status-card"),
@@ -121,27 +98,19 @@ const el = {
   zonePopupTitle: document.getElementById("zone-popup-title"),
   zonePopupStatus: document.getElementById("zone-popup-status"),
   zonePopupRisk: document.getElementById("zone-popup-risk"),
-  scanBtn: document.getElementById("scan-btn"),
+  scanButton: document.getElementById("scan-button"),
   scanBadge: document.getElementById("scan-badge"),
-  scanBadgeText: document.getElementById("scan-badge-text"),
+  scanPercent: document.getElementById("scan-percent"),
+  scanSweep: document.getElementById("scan-sweep"),
   cameraPreview: document.getElementById("camera-preview"),
-  cameraVideo: document.getElementById("camera-video"),
   cameraError: document.getElementById("camera-error"),
 };
 
 const ICON_OK = `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`;
 const ICON_BAD = `<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>`;
-const ICON_IDLE = `<circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16" x2="12.01" y2="16"/>`;
+const ICON_SCAN = `<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/>`;
 
 function renderMetric(prefix, m) {
-  if (!m) {
-    el[`${prefix}Name`].textContent = "—";
-    el[`${prefix}Value`].innerHTML = "—";
-    el[`${prefix}Value`].classList.remove("bad");
-    el[`${prefix}Bar`].style.width = "0%";
-    el[`${prefix}Bar`].style.background = IDLE_ZONE;
-    return;
-  }
   el[`${prefix}Name`].textContent = m.name;
   el[`${prefix}Value`].innerHTML = `${m.value} <span>/ ${m.limit}</span>`;
   el[`${prefix}Value`].classList.toggle("bad", !m.within);
@@ -149,116 +118,223 @@ function renderMetric(prefix, m) {
   el[`${prefix}Bar`].style.background = m.within ? GOOD : BAD;
 }
 
-// aplica un diagnóstico (real, salido del escaneo, o IDLE_DIAGNOSIS) tanto
-// al maniquí (color de zonas + pose) como a la tarjeta de estado del HUD.
-function applyDiagnosis(diag, opts = {}) {
-  lastDiagnosis = diag;
-  const zoneSet = new Set(diag.zones || []);
-  ZONE_KEYS.forEach((z) => {
-    zoneTargets[z] = diag.idle ? IDLE_ZONE : zoneSet.has(z) ? BAD : GOOD;
-  });
-  Object.assign(poseTarget, diag.pose || { neck: 0, torso: 0, shoulderTilt: 0 });
-  rimTarget = new THREE.Color(diag.idle ? IDLE_ZONE : diag.ok ? GOOD : BAD);
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
 
-  el.statusCard.classList.toggle("bad", !diag.idle && !diag.ok);
-  el.statusTag.classList.toggle("bad", !diag.idle && !diag.ok);
-  el.statusTag.textContent = diag.idle ? "Listo para escanear" : diag.ok ? "Postura correcta" : "Zona afectada detectada";
-  el.statusIcon.innerHTML = diag.idle ? ICON_IDLE : diag.ok ? ICON_OK : ICON_BAD;
-  el.statusIcon.setAttribute("stroke", diag.idle ? "#94a3b8" : diag.ok ? GOOD : BAD);
-  el.statusLabel.textContent = diag.label;
-  el.statusDesc.textContent = diag.desc;
-  renderMetric("metric1", diag.metric || null);
-  renderMetric("metric2", diag.metric2 || null);
-  renderMetric("metric3", diag.metric3 || null);
+// Convierte un ángulo medido (grados) en radianes de "flexión" para animar
+// el maniquí: se le resta una línea base natural y se recorta a un máximo,
+// para que el movimiento se vea proporcional pero no distorsione la malla.
+function angleToPoseRad(deg, baselineDeg, maxDeg) {
+  if (deg == null) return 0;
+  const over = Math.max(0, Math.min(deg - baselineDeg, maxDeg));
+  return THREE.MathUtils.degToRad(over);
+}
 
-  if (!diag.idle && opts.addHistory !== false) {
-    history = [{ label: diag.label, ok: diag.ok, t: Date.now() }, ...history].slice(0, 4);
-    el.historyList.innerHTML = history
-      .map((h) => `<div class="pl-history-row"><i class="dot" style="background:${h.ok ? GOOD : BAD}"></i>${h.label}</div>`)
-      .join("");
+function setIdleCard() {
+  el.statusCard.classList.remove("bad");
+  el.statusTag.classList.remove("bad");
+  el.statusTag.textContent = lastResult ? "Listo para volver a escanear" : "En espera";
+  el.statusIcon.innerHTML = ICON_SCAN;
+  el.statusIcon.setAttribute("stroke", "#94a3b8");
+  if (!lastResult) {
+    el.statusLabel.textContent = "Presioná Iniciar escaneo";
+    el.statusDesc.textContent =
+      "Activamos tu cámara 5 segundos para medir tu postura. Podés estar de frente, de lado, como te resulte más cómodo.";
   }
+  el.progressBar.style.width = "0%";
+}
+
+function setScanningCard() {
+  el.statusCard.classList.remove("bad");
+  el.statusTag.classList.remove("bad");
+  el.statusTag.textContent = "Escaneando";
+  el.statusIcon.innerHTML = ICON_SCAN;
+  el.statusIcon.setAttribute("stroke", "#22d3ee");
+  el.statusLabel.textContent = "Analizando tu postura…";
+  el.statusDesc.textContent = "Quedate en una posición natural durante unos segundos.";
+}
+
+// arma el "mini diagnóstico": junta las zonas afectadas (sin repetir el
+// mismo consejo de riesgo dos veces) en un párrafo breve.
+function buildDiagnosis(zones) {
+  const seenRisk = new Set();
+  const risks = [];
+  zones.forEach((z) => {
+    const info = ZONE_INFO[z];
+    if (!seenRisk.has(info.risk)) {
+      seenRisk.add(info.risk);
+      risks.push(info.risk);
+    }
+  });
+  return risks.join(" ");
+}
+
+function buildLabel(zones) {
+  if (zones.length === 0) return "¡Postura correcta!";
+  const labels = zones.map((z) => ZONE_INFO[z].label);
+  if (labels.length === 1) return `${labels[0]} afectado`;
+  return `${labels.slice(0, -1).join(", ")} y ${labels[labels.length - 1]} afectados`;
+}
+
+function applyScanResult(result) {
+  lastResult = result;
+
+  if (!result.success) {
+    el.statusCard.classList.add("bad");
+    el.statusTag.classList.add("bad");
+    el.statusTag.textContent = "No se detectó una persona";
+    el.statusIcon.innerHTML = ICON_BAD;
+    el.statusIcon.setAttribute("stroke", BAD);
+    el.statusLabel.textContent = "No pudimos verte bien";
+    el.statusDesc.textContent =
+      "Ubicate frente a la cámara con buena luz, asegurate que se vea tu torso, y probá de nuevo.";
+    ZONE_KEYS.forEach((z) => (zoneTargets[z] = GOOD));
+    rimTarget = new THREE.Color(GOOD);
+    return;
+  }
+
+  const cervicalBad = result.cervicalAngle != null && result.cervicalAngle > THRESHOLDS.cervical;
+  const cervicalSevere = result.cervicalAngle != null && result.cervicalAngle > THRESHOLDS.cervical + 10;
+  const torsoBad = result.torsoAngle != null && result.torsoAngle > THRESHOLDS.torso;
+  const shoulderBad = result.shoulderTiltAngle != null && result.shoulderTiltAngle > THRESHOLDS.shoulder;
+
+  const zones = [];
+  if (cervicalBad) zones.push("neck");
+  if (cervicalSevere) zones.push("head");
+  if (torsoBad) zones.push("upperSpine", "lowerSpine");
+  if (shoulderBad) zones.push(result.lowerShoulder);
+
+  const zoneSet = new Set(zones);
+  ZONE_KEYS.forEach((z) => {
+    zoneTargets[z] = zoneSet.has(z) ? BAD : GOOD;
+  });
+
+  const ok = zones.length === 0;
+  rimTarget = new THREE.Color(ok ? GOOD : BAD);
+
+  poseTarget.neck = angleToPoseRad(result.cervicalAngle, 6, 45);
+  poseTarget.torso = angleToPoseRad(result.torsoAngle, 4, 35);
+  const shoulderRad = angleToPoseRad(result.shoulderTiltAngle, 2, 20);
+  poseTarget.shoulderTilt = result.lowerShoulder === "shoulderR" ? -shoulderRad : shoulderRad;
+
+  el.statusCard.classList.toggle("bad", !ok);
+  el.statusTag.classList.toggle("bad", !ok);
+  el.statusTag.textContent = ok ? "Postura correcta" : "Zona(s) afectada(s) detectada(s)";
+  el.statusIcon.innerHTML = ok ? ICON_OK : ICON_BAD;
+  el.statusIcon.setAttribute("stroke", ok ? GOOD : BAD);
+  el.statusLabel.textContent = buildLabel(zones);
+  el.statusDesc.textContent = ok
+    ? "Tu alineación cervical, de tronco y de hombros están dentro de rangos saludables."
+    : buildDiagnosis(zones);
+
+  renderMetric("metric1", {
+    name: "Ángulo cervical",
+    value: result.cervicalAngle != null ? `${round1(result.cervicalAngle)}°` : "—",
+    limit: `${THRESHOLDS.cervical}°`,
+    within: !cervicalBad,
+  });
+  renderMetric("metric2", {
+    name: "Inclinación de torso",
+    value: result.torsoAngle != null ? `${round1(result.torsoAngle)}°` : "—",
+    limit: `${THRESHOLDS.torso}°`,
+    within: !torsoBad,
+  });
+  renderMetric("metric3", {
+    name: "Desnivel de hombros",
+    value: result.shoulderTiltAngle != null ? `${round1(result.shoulderTiltAngle)}°` : "—",
+    limit: `${THRESHOLDS.shoulder}°`,
+    within: !shoulderBad,
+  });
+
+  history = [{ label: buildLabel(zones), ok, t: Date.now() }, ...history].slice(0, 4);
+  el.historyList.innerHTML = history
+    .map(
+      (h) =>
+        `<div class="pl-history-row"><i class="dot" style="background:${h.ok ? GOOD : BAD}"></i>${h.label}</div>`
+    )
+    .join("");
 
   if (activeZone) openZonePopup(activeZone, lastPopupX, lastPopupY);
 }
 
-applyDiagnosis(IDLE_DIAGNOSIS, { addHistory: false });
+setIdleCard();
 
-/* ------------------------- flujo de escaneo ------------------------- */
-
-function setScanBtnLabel(text, disabled) {
-  el.scanBtn.textContent = text;
-  el.scanBtn.disabled = disabled;
-}
+/* -------------------- orquestación del escaneo -------------------- */
 
 async function startScan() {
-  if (mode !== "idle") return;
+  if (uiState === "scanning") return;
+  uiState = "scanning";
+  paused = false;
+  el.scanButton.disabled = true;
+  el.scanButton.textContent = "Escaneando…";
   el.cameraError.hidden = true;
-  mode = "loading";
-  setScanBtnLabel("Preparando cámara…", true);
+  setScanningCard();
+  el.scanBadge.hidden = false;
+  el.scanSweep.hidden = false;
+  el.scanPercent.textContent = "0%";
+
+  function recoverToIdle(message) {
+    el.cameraError.textContent = message;
+    el.cameraError.hidden = false;
+    el.scanBadge.hidden = true;
+    el.scanSweep.hidden = true;
+    el.cameraPreview.hidden = true;
+    stopCamera(el.cameraPreview);
+    uiState = "idle";
+    el.scanButton.disabled = false;
+    el.scanButton.textContent = "Iniciar escaneo";
+    setIdleCard();
+  }
 
   try {
-    await poseWatcher.start(el.cameraVideo);
+    await startCamera(el.cameraPreview);
   } catch (err) {
-    console.error("[PostureLab] no se pudo iniciar la cámara / el modelo:", err);
-    el.cameraError.textContent =
-      "No se pudo acceder a la cámara. Revisa los permisos del navegador y vuelve a intentarlo.";
-    el.cameraError.hidden = false;
-    mode = "idle";
-    setScanBtnLabel("Iniciar escaneo", false);
+    console.error("No se pudo acceder a la cámara:", err);
+    recoverToIdle("No pudimos acceder a tu cámara. Revisá los permisos del navegador e intentá de nuevo.");
     return;
   }
 
-  mode = "scanning";
-  scanElapsed = 0;
-  el.scanBadge.hidden = false;
   el.cameraPreview.hidden = false;
-  scanRingGroup.visible = true;
-  setScanBtnLabel("Escaneando…", true);
 
-  el.statusCard.classList.remove("bad");
-  el.statusTag.classList.remove("bad");
-  el.statusTag.textContent = "Escaneando…";
-  el.statusIcon.innerHTML = ICON_IDLE;
-  el.statusIcon.setAttribute("stroke", "#22d3ee");
-  el.statusLabel.textContent = "Analizando tu postura";
-  el.statusDesc.textContent = "Quédate en una posición natural — de frente o de lado da lo mismo.";
-  el.progressBar.style.width = "0%";
-}
-
-function finishScan() {
-  poseWatcher.stop();
-  el.scanBadge.hidden = true;
-  el.cameraPreview.hidden = true;
-  scanRingGroup.visible = false;
-
-  const diag = poseWatcher.buildDiagnosis();
-  if (diag.insufficient) {
-    el.cameraError.textContent = diag.message;
-    el.cameraError.hidden = false;
-    applyDiagnosis(IDLE_DIAGNOSIS, { addHistory: false });
-    mode = "idle";
-    setScanBtnLabel("Iniciar escaneo", false);
-    el.progressBar.style.width = "0%";
+  let result;
+  try {
+    result = await runScan(el.cameraPreview, SCAN_MS, (progress) => {
+      el.scanPercent.textContent = `${Math.round(progress * 100)}%`;
+      el.progressBar.style.width = `${progress * 100}%`;
+    });
+  } catch (err) {
+    console.error("Error durante el escaneo:", err);
+    recoverToIdle(
+      "No pudimos completar el escaneo (falló la carga del modelo de detección). Revisá tu conexión e intentá de nuevo."
+    );
     return;
   }
 
-  applyDiagnosis(diag);
-  mode = "hold";
+  stopCamera(el.cameraPreview);
+  el.cameraPreview.hidden = true;
+  el.scanBadge.hidden = true;
+  el.scanSweep.hidden = true;
+
+  applyScanResult(result);
+
+  uiState = "result";
   holdElapsed = 0;
-  el.progressBar.style.width = "100%";
-  el.progressBar.style.background = diag.ok ? GOOD : BAD;
-  setScanBtnLabel("Nuevo escaneo en 10s…", true);
+  el.scanButton.disabled = false;
+  el.scanButton.textContent = "Volver a escanear";
 }
 
-function goIdleAfterHold() {
-  applyDiagnosis(IDLE_DIAGNOSIS, { addHistory: false });
-  mode = "idle";
-  el.progressBar.style.background = "";
-  el.progressBar.style.width = "0%";
-  setScanBtnLabel("Iniciar escaneo", false);
-}
+el.scanButton.addEventListener("click", startScan);
 
-el.scanBtn.addEventListener("click", startScan);
+function tickHold(dtMs) {
+  if (uiState !== "result" || paused) return;
+  holdElapsed += dtMs;
+  el.progressBar.style.width = `${Math.max(0, 100 - (holdElapsed / HOLD_MS) * 100)}%`;
+  if (holdElapsed >= HOLD_MS) {
+    uiState = "idle";
+    setIdleCard();
+  }
+}
 
 /* --------------------- click en una zona -> popup --------------------- */
 
@@ -318,7 +394,6 @@ function zoneAtEvent(e) {
 
 document.addEventListener("click", (e) => {
   if (el.zonePopup.contains(e.target)) return; // click dentro del popup: no hacer nada
-  if (el.scanBtn.contains(e.target)) return; // no confundir el click del botón con un click en el maniquí
   const zone = zoneAtEvent(e);
   if (zone) {
     openZonePopup(zone, e.clientX, e.clientY);
@@ -328,8 +403,6 @@ document.addEventListener("click", (e) => {
 });
 
 /* ------------------------------ escena ------------------------------ */
-/*  Todo este bloque (carga del .glb, zonas, pose, animate) es el mismo */
-/*  que ya funcionaba con el maniquí — no se toca.                      */
 
 const canvas = document.getElementById("scene");
 const wrap = document.querySelector(".pl-canvas-wrap");
@@ -354,7 +427,7 @@ scene.add(key);
 const fill = new THREE.DirectionalLight(0x22d3ee, 0.3);
 fill.position.set(-3, 1.5, -2);
 scene.add(fill);
-rimLight = new THREE.DirectionalLight(IDLE_ZONE, 0.9);
+rimLight = new THREE.DirectionalLight(GOOD, 0.9);
 rimLight.position.set(-1.5, 2, -3.5);
 scene.add(rimLight);
 
@@ -364,40 +437,6 @@ scene.add(grid);
 
 const root = new THREE.Group();
 scene.add(root);
-
-// --- aro de escaneo: sube y baja atravesando el cuerpo mientras dura el
-// escaneo (5s), igual que en la referencia. Son dos toros concéntricos
-// (uno fino y brillante, otro más grueso y tenue detrás) para dar sensación
-// de glow sin depender de post-procesado.
-const SCAN_RING_COLOR = 0x2dd8a6;
-const scanRingGroup = new THREE.Group();
-scanRingGroup.rotation.x = Math.PI / 2; // lo acuesta en el plano XZ (horizontal)
-scanRingGroup.visible = false;
-const scanRingCore = new THREE.Mesh(
-  new THREE.TorusGeometry(0.5, 0.006, 8, 72),
-  new THREE.MeshBasicMaterial({ color: SCAN_RING_COLOR, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending })
-);
-const scanRingGlow = new THREE.Mesh(
-  new THREE.TorusGeometry(0.5, 0.05, 8, 72),
-  new THREE.MeshBasicMaterial({ color: SCAN_RING_COLOR, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })
-);
-scanRingGroup.add(scanRingGlow, scanRingCore);
-scene.add(scanRingGroup);
-
-const SCAN_RING_MIN_Y = 0.06;
-const SCAN_RING_MAX_Y = 1.62;
-const SCAN_RING_PERIOD_MS = 1400; // tiempo de un viaje completo subiendo o bajando
-
-function updateScanRing() {
-  // sube y baja en diente de sierra suavizado (ease in/out) durante todo el escaneo
-  const t = (scanElapsed % (SCAN_RING_PERIOD_MS * 2)) / (SCAN_RING_PERIOD_MS * 2); // 0..1
-  const goingUp = t < 0.5;
-  const local = goingUp ? t * 2 : (1 - t) * 2; // 0..1 dentro de cada tramo
-  const eased = 0.5 - 0.5 * Math.cos(local * Math.PI); // ease in/out
-  scanRingGroup.position.y = SCAN_RING_MIN_Y + eased * (SCAN_RING_MAX_Y - SCAN_RING_MIN_Y);
-  const pulse = 1 + Math.sin(scanElapsed * 0.02) * 0.015;
-  scanRingGroup.scale.setScalar(pulse);
-}
 
 window.addEventListener("resize", () => {
   camera.aspect = wrap.clientWidth / wrap.clientHeight;
@@ -478,35 +517,14 @@ const clock = new THREE.Clock();
 const currentColors = {};
 ZONE_KEYS.forEach((z) => (currentColors[z] = new THREE.Color(NEUTRAL)));
 
-function tickScanBadge() {
-  const pct = Math.min(100, Math.round((scanElapsed / SCAN_MS) * 100));
-  el.scanBadgeText.textContent = `Escaneo en progreso · ${pct}%`;
-  el.progressBar.style.width = `${pct}%`;
-  updateScanRing();
-}
-
-function tickHold(dtMs) {
-  holdElapsed += dtMs;
-  const remaining = Math.max(0, 100 - (holdElapsed / HOLD_MS) * 100);
-  el.progressBar.style.width = `${remaining}%`;
-  if (holdElapsed >= HOLD_MS) goIdleAfterHold();
-}
-
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
-  const dtMs = dt * 1000;
   const LERP = 1 - Math.pow(0.001, dt);
 
-  if (mode === "scanning") {
-    scanElapsed += dtMs;
-    tickScanBadge();
-    if (scanElapsed >= SCAN_MS) finishScan();
-  } else if (mode === "hold") {
-    tickHold(dtMs);
-  }
+  tickHold(dt * 1000);
 
-  if (!paused) root.rotation.y += dt * (mode === "scanning" ? 0.12 : 0.35);
+  if (!paused) root.rotation.y += dt * 0.5;
 
   poseCurrent.neck += (poseTarget.neck - poseCurrent.neck) * LERP;
   poseCurrent.torso += (poseTarget.torso - poseCurrent.torso) * LERP;
@@ -518,7 +536,7 @@ function animate() {
   if (poseNodes.shoulderR) poseNodes.shoulderR.node.rotation.z = poseNodes.shoulderR.rest.z + poseCurrent.shoulderTilt;
 
   ZONE_KEYS.forEach((z) => {
-    const targetHex = zoneTargets[z] || IDLE_ZONE;
+    const targetHex = zoneTargets[z] || GOOD;
     const targetColor = new THREE.Color(targetHex);
     currentColors[z].lerp(targetColor, LERP);
     const isBad = targetHex === BAD;
