@@ -8,6 +8,7 @@
   --good: #10b981;
   --warn: #f59e0b;
   --bad: #ef4444;
+  --severe: #8b5cf6;
   --text: #f8fafc;
   --text-dim: #94a3b8;
   --text-faint: #5b6b83;
@@ -66,6 +67,14 @@ html, body {
   70% { opacity: 0; }
   100% { transform: scale(1.25); opacity: 0; }
 }
+@keyframes pl-card-pulse-once {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(139, 92, 246, 0); }
+  35% { transform: scale(1.015); box-shadow: 0 0 26px 2px rgba(139, 92, 246, 0.22); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(139, 92, 246, 0); }
+}
+.pl-pulse-once {
+  animation: pl-card-pulse-once 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
 
 .pl-root {
   display: flex;
@@ -75,6 +84,45 @@ html, body {
   padding: 18px;
   gap: 18px;
 }
+
+/* --------------------------- panel lateral derecho --------------------------- */
+
+.pl-side {
+  width: 300px;
+  max-width: 30%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.pl-zones-card {
+  background: linear-gradient(155deg, var(--card), rgba(21, 28, 44, 0.85));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  animation: pl-fade-up 0.5s ease 0.05s backwards;
+}
+.pl-zones-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.pl-zone-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.pl-zone-row:last-child { border-bottom: none; }
+.pl-zone-row .dot { flex-shrink: 0; box-shadow: 0 0 8px currentColor; }
+.pl-zone-name { flex: 1; color: var(--text); }
+.pl-zone-status { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; }
 
 /* --------------------------- panel izquierdo --------------------------- */
 
@@ -304,6 +352,122 @@ html, body {
 .pl-history-row .dot { flex-shrink: 0; box-shadow: 0 0 8px currentColor; }
 
 /* ------------------------------- footer --------------------------------- */
+
+/* ------------------------------ gauge cervical --------------------------- */
+
+.pl-gauge-card {
+  background: linear-gradient(155deg, var(--card), rgba(21, 28, 44, 0.85));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 16px 18px 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+.pl-gauge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.pl-gauge-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.pl-gauge-body {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.pl-gauge-svg { width: 100%; max-width: 220px; height: auto; }
+#gauge-needle {
+  transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 100px 95px;
+}
+.pl-gauge-value {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 26px;
+  color: var(--text);
+}
+.pl-gauge-deg { font-size: 16px; color: var(--text-faint); margin-left: 1px; }
+.pl-gauge-scale {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  margin-top: -6px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ------------------------------ como funciona ----------------------------- */
+
+.pl-howto-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.pl-howto-step {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.pl-howto-step:last-child { margin-bottom: 0; }
+.pl-howto-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--primary);
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pl-howto-step-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.pl-howto-step-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* --------------------------------- consejo -------------------------------- */
+
+.pl-tip {
+  display: flex;
+  gap: 10px;
+  background: linear-gradient(155deg, rgba(99, 102, 241, 0.12), rgba(59, 130, 246, 0.06));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.pl-tip-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 14px;
+}
+.pl-tip-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.pl-tip-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
 
 .pl-footer {
   margin-top: auto;
@@ -548,5 +712,6 @@ html, body {
 @media (max-width: 860px) {
   .pl-root { flex-direction: column-reverse; padding: 10px; gap: 10px; }
   .pl-hud { width: 100%; max-width: none; }
+  .pl-side { width: 100%; max-width: none; }
   .pl-canvas-wrap { height: 46vh; }
 }

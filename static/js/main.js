@@ -15,6 +15,25 @@ const NEUTRAL = "#334155";
 const GOOD = "#10B981";
 const BAD = "#EF4444";
 const REF = "#475569";
+// acentos de severidad general (no se usan en el cuerpo, solo en el panel):
+// 1 zona afectada = amarillo, 2 = rojo, 3+ o un caso severo = morado.
+const WARN = "#F59E0B";
+const SEVERE = "#8B5CF6";
+
+function hexToRgba(hex, alpha) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function severityColor(issueCount, hasSevereIssue) {
+  if (issueCount === 0) return GOOD;
+  if (hasSevereIssue || issueCount >= 3) return SEVERE;
+  if (issueCount === 2) return BAD;
+  return WARN;
+}
 
 const THRESHOLDS = { cervical: 20, torso: 15, shoulder: 6 };
 
@@ -104,6 +123,10 @@ const el = {
   scanSweep: document.getElementById("scan-sweep"),
   cameraPreview: document.getElementById("camera-preview"),
   cameraError: document.getElementById("camera-error"),
+  gaugeNeedle: document.getElementById("gauge-needle"),
+  gaugeNumber: document.getElementById("gauge-number"),
+  gaugeSeverity: document.getElementById("gauge-severity"),
+  zonesList: document.getElementById("zones-list"),
 };
 
 const ICON_OK = `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`;
@@ -129,6 +152,39 @@ function angleToPoseRad(deg, baselineDeg, maxDeg) {
   if (deg == null) return 0;
   const over = Math.max(0, Math.min(deg - baselineDeg, maxDeg));
   return THREE.MathUtils.degToRad(over);
+}
+
+function renderZonesList(scanned) {
+  el.zonesList.innerHTML = ZONE_KEYS.map((z) => {
+    const info = ZONE_INFO[z];
+    if (!scanned) {
+      return `<div class="pl-zone-row"><i class="dot" style="background:${REF}"></i><span class="pl-zone-name">${info.label}</span><span class="pl-zone-status" style="color:${REF}">—</span></div>`;
+    }
+    const color = zoneTargets[z] || GOOD;
+    const statusText = color === GOOD ? "Correcto" : "Afectado";
+    return `<div class="pl-zone-row"><i class="dot" style="background:${color}"></i><span class="pl-zone-name">${info.label}</span><span class="pl-zone-status" style="color:${color}">${statusText}</span></div>`;
+  }).join("");
+}
+
+function updateGauge(cervicalAngle, cervicalBad, cervicalSevere) {
+  if (cervicalAngle == null) {
+    el.gaugeNumber.textContent = "—";
+    el.gaugeSeverity.textContent = "Sin datos";
+    el.gaugeSeverity.style.color = "";
+    el.gaugeSeverity.style.background = "";
+    el.gaugeNeedle.setAttribute("transform", "rotate(180 100 95)");
+    return;
+  }
+  const clamped = Math.max(0, Math.min(cervicalAngle, 60));
+  const rotateDeg = (clamped / 60) * 180 - 180;
+  el.gaugeNeedle.setAttribute("transform", `rotate(${rotateDeg} 100 95)`);
+  el.gaugeNumber.textContent = round1(cervicalAngle);
+
+  const label = cervicalSevere ? "Severo" : cervicalBad ? "Afectado" : "Correcto";
+  const color = cervicalSevere ? SEVERE : cervicalBad ? BAD : GOOD;
+  el.gaugeSeverity.textContent = label;
+  el.gaugeSeverity.style.color = color;
+  el.gaugeSeverity.style.background = hexToRgba(color, 0.14);
 }
 
 function setIdleCard() {
@@ -191,6 +247,8 @@ function applyScanResult(result) {
       "Ubicate frente a la cámara con buena luz, asegurate que se vea tu torso, y probá de nuevo.";
     ZONE_KEYS.forEach((z) => (zoneTargets[z] = GOOD));
     rimTarget = new THREE.Color(GOOD);
+    updateGauge(null);
+    renderZonesList(false);
     return;
   }
 
@@ -211,7 +269,9 @@ function applyScanResult(result) {
   });
 
   const ok = zones.length === 0;
-  rimTarget = new THREE.Color(ok ? GOOD : BAD);
+  const issueCount = [cervicalBad, torsoBad, shoulderBad].filter(Boolean).length;
+  const severity = severityColor(issueCount, cervicalSevere);
+  rimTarget = new THREE.Color(severity);
 
   poseTarget.neck = angleToPoseRad(result.cervicalAngle, 6, 45);
   poseTarget.torso = angleToPoseRad(result.torsoAngle, 4, 35);
@@ -219,10 +279,16 @@ function applyScanResult(result) {
   poseTarget.shoulderTilt = result.lowerShoulder === "shoulderR" ? -shoulderRad : shoulderRad;
 
   el.statusCard.classList.toggle("bad", !ok);
+  el.statusCard.style.borderColor = ok ? "" : hexToRgba(severity, 0.4);
+  el.statusCard.classList.remove("pl-pulse-once");
+  void el.statusCard.offsetWidth; // reinicia la animación aunque sea la misma severidad
+  el.statusCard.classList.add("pl-pulse-once");
   el.statusTag.classList.toggle("bad", !ok);
+  el.statusTag.style.color = ok ? "" : severity;
+  el.statusTag.style.background = ok ? "" : hexToRgba(severity, 0.14);
   el.statusTag.textContent = ok ? "Postura correcta" : "Zona(s) afectada(s) detectada(s)";
   el.statusIcon.innerHTML = ok ? ICON_OK : ICON_BAD;
-  el.statusIcon.setAttribute("stroke", ok ? GOOD : BAD);
+  el.statusIcon.setAttribute("stroke", ok ? GOOD : severity);
   el.statusLabel.textContent = buildLabel(zones);
   el.statusDesc.textContent = ok
     ? "Tu alineación cervical, de tronco y de hombros están dentro de rangos saludables."
@@ -247,11 +313,14 @@ function applyScanResult(result) {
     within: !shoulderBad,
   });
 
-  history = [{ label: buildLabel(zones), ok, t: Date.now() }, ...history].slice(0, 4);
+  updateGauge(result.cervicalAngle, cervicalBad, cervicalSevere);
+  renderZonesList(true);
+
+  history = [{ label: buildLabel(zones), color: ok ? GOOD : severity, t: Date.now() }, ...history].slice(0, 4);
   el.historyList.innerHTML = history
     .map(
       (h) =>
-        `<div class="pl-history-row"><i class="dot" style="background:${h.ok ? GOOD : BAD}"></i>${h.label}</div>`
+        `<div class="pl-history-row"><i class="dot" style="background:${h.color}"></i>${h.label}</div>`
     )
     .join("");
 
@@ -259,6 +328,7 @@ function applyScanResult(result) {
 }
 
 setIdleCard();
+renderZonesList(false);
 
 /* -------------------- orquestación del escaneo -------------------- */
 

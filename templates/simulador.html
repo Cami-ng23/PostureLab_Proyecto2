@@ -73,6 +73,39 @@
         <div id="history-list"></div>
       </div>
 
+      <div class="pl-howto">
+        <div class="pl-howto-title mono">Cómo funciona</div>
+        <div class="pl-howto-step">
+          <span class="pl-howto-num">1</span>
+          <div>
+            <div class="pl-howto-step-title">Posicionate</div>
+            <div class="pl-howto-step-desc">Parate relajado frente a la cámara, de frente o de lado.</div>
+          </div>
+        </div>
+        <div class="pl-howto-step">
+          <span class="pl-howto-num">2</span>
+          <div>
+            <div class="pl-howto-step-title">Escaneamos</div>
+            <div class="pl-howto-step-desc">La cámara mide tu postura durante 5 segundos.</div>
+          </div>
+        </div>
+        <div class="pl-howto-step">
+          <span class="pl-howto-num">3</span>
+          <div>
+            <div class="pl-howto-step-title">Resultados</div>
+            <div class="pl-howto-step-desc">Te mostramos qué zonas están afectadas y por qué.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pl-tip">
+        <span class="pl-tip-icon">✦</span>
+        <div>
+          <div class="pl-tip-title">Consejo</div>
+          <div class="pl-tip-desc">Parate relajado, con los pies al ancho de los hombros y los brazos a los costados.</div>
+        </div>
+      </div>
+
       <div class="pl-footer">
         Modelo real: <code>posturelab_mannequin.glb</code> (maniquí "primitive_realistic" recortado del bundle, ~0.42MB).
       </div>
@@ -100,6 +133,33 @@
         <p id="zone-popup-risk" class="pl-zone-popup-risk"></p>
       </div>
     </main>
+
+    <aside class="pl-side">
+      <div class="pl-gauge-card">
+        <div class="pl-gauge-header">
+          <span class="pl-gauge-title">Ángulo cervical</span>
+          <span id="gauge-severity" class="pl-tag">Sin datos</span>
+        </div>
+        <div class="pl-gauge-body">
+          <svg viewBox="0 0 200 105" class="pl-gauge-svg">
+            <path d="M20,95 A80,80 0 0 1 60,25.72" fill="none" stroke="#10b981" stroke-width="10" stroke-linecap="round"/>
+            <path d="M60,25.72 A80,80 0 0 1 156.57,38.43" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round"/>
+            <path d="M156.57,38.43 A80,80 0 0 1 180,95" fill="none" stroke="#8b5cf6" stroke-width="10" stroke-linecap="round"/>
+            <g id="gauge-needle" transform="rotate(180 100 95)">
+              <line x1="100" y1="95" x2="165" y2="95" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/>
+            </g>
+            <circle cx="100" cy="95" r="6" fill="#f8fafc"/>
+          </svg>
+          <div class="pl-gauge-value"><span id="gauge-number">—</span><span class="pl-gauge-deg">°</span></div>
+        </div>
+        <div class="pl-gauge-scale mono"><span>0°</span><span>20°</span><span>40°</span><span>60°</span></div>
+      </div>
+
+      <div class="pl-zones-card">
+        <div class="pl-zones-title mono">Zonas analizadas</div>
+        <div id="zones-list"></div>
+      </div>
+    </aside>
 
   </div>
 
