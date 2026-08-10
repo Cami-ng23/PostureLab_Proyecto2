@@ -237,14 +237,16 @@ function applyScanResult(result) {
   lastResult = result;
 
   if (!result.success) {
+    const lowConfidence = result.reason === "low-confidence";
     el.statusCard.classList.add("bad");
     el.statusTag.classList.add("bad");
-    el.statusTag.textContent = "No se detectó una persona";
+    el.statusTag.textContent = lowConfidence ? "No pudimos medir con confianza" : "No se detectó una persona";
     el.statusIcon.innerHTML = ICON_BAD;
     el.statusIcon.setAttribute("stroke", BAD);
     el.statusLabel.textContent = "No pudimos verte bien";
-    el.statusDesc.textContent =
-      "Ubicate frente a la cámara con buena luz, asegurate que se vea tu torso, y probá de nuevo.";
+    el.statusDesc.textContent = lowConfidence
+      ? "Te detectamos, pero no con suficiente confianza. Probá con ropa más ajustada (sin polerón/capucha suelta), buena luz de frente, y que se vea tu torso completo."
+      : "No detectamos a nadie frente a la cámara. Ubicate en el encuadre, con buena luz, y probá de nuevo.";
     ZONE_KEYS.forEach((z) => (zoneTargets[z] = GOOD));
     rimTarget = new THREE.Color(GOOD);
     updateGauge(null);

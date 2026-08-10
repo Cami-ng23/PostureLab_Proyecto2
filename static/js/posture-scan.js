@@ -12,8 +12,12 @@
 import { FilesetResolver, PoseLandmarker } from "./vendor/mediapipe/vision_bundle.mjs";
 
 const WASM_BASE = "/static/js/vendor/mediapipe/wasm";
+// "full" en vez de "lite": bastante más preciso detectando la pose bajo ropa
+// suelta (polerones, chaquetas), a cambio de un poco más de peso/carga inicial.
+// Como el escaneo no necesita tiempo real (solo 5s, unos pocos frames por
+// segundo alcanzan), vale la pena el trade-off de precisión.
 const MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 
 // índices de MediaPipe Pose (33 puntos)
 const IDX = {
@@ -30,13 +34,22 @@ let landmarkerPromise = null;
 
 function getLandmarker() {
   if (!landmarkerPromise) {
-    landmarkerPromise = FilesetResolver.forVisionTasks(WASM_BASE).then((fileset) =>
-      PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
-        runningMode: "VIDEO",
-        numPoses: 1,
-      })
-    );
+    landmarkerPromise = Promise.race([
+      FilesetResolver.forVisionTasks(WASM_BASE).then((fileset) =>
+        PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+          runningMode: "VIDEO",
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.3,
+          minPosePresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3,
+        })
+      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout-model-load")), 20000)),
+    ]).catch((err) => {
+      landmarkerPromise = null; // permite reintentar en el próximo escaneo
+      throw err;
+    });
   }
   return landmarkerPromise;
 }
@@ -52,11 +65,13 @@ export async function startCamera(videoEl) {
   });
   videoEl.srcObject = currentStream;
   await videoEl.play();
-  // esperar a que el video tenga dimensiones reales antes de detectar
+  // esperar a que el video tenga dimensiones reales antes de detectar,
+  // con un tope de 8s por si el navegador tarda en entregar el primer frame
   if (!videoEl.videoWidth) {
-    await new Promise((resolve) => {
-      videoEl.addEventListener("loadedmetadata", resolve, { once: true });
-    });
+    await Promise.race([
+      new Promise((resolve) => videoEl.addEventListener("loadedmetadata", resolve, { once: true })),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout-video-metadata")), 8000)),
+    ]);
   }
 }
 
@@ -192,8 +207,11 @@ export async function runScan(videoEl, durationMs, onProgress) {
   });
 
   const validFrames = samples.torso.length + samples.cervical.length;
-  if (framesSeen < 5 || validFrames === 0) {
+  if (framesSeen === 0) {
     return { success: false, reason: "no-person" };
+  }
+  if (validFrames === 0) {
+    return { success: false, reason: "low-confidence" };
   }
 
   const lowerShoulder =
