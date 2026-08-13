@@ -10,7 +10,7 @@ import { startCamera, stopCamera, runScan } from "./posture-scan.js";
 /* ------------------------------------------------------------------ */
 
 const SCAN_MS = 5000;
-const HOLD_MS = 10000;
+const HOLD_MS = 5000;
 const NEUTRAL = "#334155";
 const GOOD = "#10B981";
 const BAD = "#EF4444";
@@ -193,12 +193,25 @@ function setIdleCard() {
   el.statusTag.textContent = lastResult ? "Listo para volver a escanear" : "En espera";
   el.statusIcon.innerHTML = ICON_SCAN;
   el.statusIcon.setAttribute("stroke", "#94a3b8");
-  if (!lastResult) {
-    el.statusLabel.textContent = "Presioná Iniciar escaneo";
-    el.statusDesc.textContent =
-      "Activamos tu cámara 5 segundos para medir tu postura. Podés estar de frente, de lado, como te resulte más cómodo.";
-  }
+  el.statusLabel.textContent = "Postura normal";
+  el.statusDesc.textContent = lastResult
+    ? "Volvimos al estado neutral. Presioná Iniciar escaneo cuando quieras medir de nuevo."
+    : "Activamos tu cámara 5 segundos para medir tu postura. Podés estar de frente, de lado, como te resulte más cómodo.";
   el.progressBar.style.width = "0%";
+}
+
+// vuelve todo (zonas, pose del maniquí, gauge, lista de zonas) al estado
+// neutral/verde, listo para el próximo escaneo — se usa cuando termina el
+// hold de 5s del resultado.
+function resetToNeutral() {
+  ZONE_KEYS.forEach((z) => (zoneTargets[z] = GOOD));
+  poseTarget.neck = 0;
+  poseTarget.torso = 0;
+  poseTarget.shoulderTilt = 0;
+  rimTarget = new THREE.Color(GOOD);
+  updateGauge(null);
+  renderZonesList(false);
+  setIdleCard();
 }
 
 function setScanningCard() {
@@ -404,7 +417,7 @@ function tickHold(dtMs) {
   el.progressBar.style.width = `${Math.max(0, 100 - (holdElapsed / HOLD_MS) * 100)}%`;
   if (holdElapsed >= HOLD_MS) {
     uiState = "idle";
-    setIdleCard();
+    resetToNeutral();
   }
 }
 

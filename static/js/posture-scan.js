@@ -126,13 +126,17 @@ function analyzeFrame(lm) {
 
   const torsoAngle = angleBetween(spineVec, verticalRef);
 
-  // cabeza: preferimos la nariz; si no es confiable, promedio de orejas
-  let head = null;
+  // cabeza: de frente suele verse mejor la nariz; de lado, una sola oreja
+  // (la más cercana a cámara) es más estable que promediar las dos, porque
+  // de perfil la oreja lejana casi no tiene visibilidad y antes eso hacía
+  // fallar la medición del cuello justo en el ángulo más diagnóstico.
   const nose = lm[IDX.nose];
   const earL = lm[IDX.earL];
   const earR = lm[IDX.earR];
-  if (nose && nose.visibility > 0.4) head = nose;
-  else if (earL && earR && earL.visibility > 0.35 && earR.visibility > 0.35) head = mid(earL, earR);
+  const headCandidates = [nose, earL, earR].filter((p) => p && p.visibility > 0.35);
+  const head = headCandidates.length
+    ? headCandidates.reduce((best, p) => (p.visibility > best.visibility ? p : best))
+    : null;
 
   let cervicalAngle = null;
   if (head) {
@@ -162,6 +166,23 @@ function median(arr) {
   return s.length % 2 ? s[mid_] : (s[mid_ - 1] + s[mid_]) / 2;
 }
 
+function stddev(arr) {
+  const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+  const v = arr.reduce((a, b) => a + (b - m) * (b - m), 0) / arr.length;
+  return Math.sqrt(v);
+}
+
+// Mediana "confiable": si hubo pocas muestras válidas, o si el valor saltó
+// demasiado de un frame a otro (poca consistencia temporal), NO devolvemos
+// un número — es preferible decir "no medido" a marcar una zona como
+// afectada con un dato ruidoso. Esto es lo que más pasa con el hombro visto
+// de perfil (la profundidad se estima peor de lado que de frente).
+function reliableMedian(arr, minSamples, maxStd) {
+  if (arr.length < minSamples) return null;
+  if (stddev(arr) > maxStd) return null;
+  return median(arr);
+}
+
 /* --------------------------------- escaneo --------------------------------- */
 
 // corre el escaneo por `durationMs`, llama onProgress(0..1) seguido,
@@ -187,9 +208,11 @@ export async function runScan(videoEl, durationMs, onProgress) {
           framesSeen++;
           const a = analyzeFrame(lm);
           if (a) {
-            if (a.torsoAngle != null) samples.torso.push(a.torsoAngle);
-            if (a.cervicalAngle != null) samples.cervical.push(a.cervicalAngle);
-            if (a.shoulderTiltAngle != null) {
+            // descartamos glitches de un frame: ningún humano dobla el
+            // cuello/torso más de ~85° sentado frente a una cámara
+            if (a.torsoAngle != null && a.torsoAngle < 85) samples.torso.push(a.torsoAngle);
+            if (a.cervicalAngle != null && a.cervicalAngle < 85) samples.cervical.push(a.cervicalAngle);
+            if (a.shoulderTiltAngle != null && a.shoulderTiltAngle < 60) {
               samples.shoulderTilt.push(a.shoulderTiltAngle);
               shoulderVotes[a.lowerShoulder]++;
             }
@@ -206,11 +229,14 @@ export async function runScan(videoEl, durationMs, onProgress) {
     requestAnimationFrame(step);
   });
 
-  const validFrames = samples.torso.length + samples.cervical.length;
+  const torsoAngle = reliableMedian(samples.torso, 15, 10);
+  const cervicalAngle = reliableMedian(samples.cervical, 15, 10);
+  const shoulderTiltAngle = reliableMedian(samples.shoulderTilt, 15, 8);
+
   if (framesSeen === 0) {
     return { success: false, reason: "no-person" };
   }
-  if (validFrames === 0) {
+  if (torsoAngle == null && cervicalAngle == null) {
     return { success: false, reason: "low-confidence" };
   }
 
@@ -219,9 +245,9 @@ export async function runScan(videoEl, durationMs, onProgress) {
 
   return {
     success: true,
-    torsoAngle: median(samples.torso),
-    cervicalAngle: median(samples.cervical),
-    shoulderTiltAngle: median(samples.shoulderTilt),
+    torsoAngle,
+    cervicalAngle,
+    shoulderTiltAngle,
     lowerShoulder,
     framesSeen,
   };
