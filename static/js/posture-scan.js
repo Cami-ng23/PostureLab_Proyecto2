@@ -183,6 +183,12 @@ function reliableMedian(arr, minSamples, maxStd) {
   return median(arr);
 }
 
+// no hace falta correr la detección en cada frame (hasta 60 veces/seg):
+// con el modelo "full" eso bloquea el hilo principal y congela el render
+// del avatar. Con ~8 veces/seg sobran muestras para la mediana en 5s, y el
+// render de Three.js (que corre en el mismo hilo) tiene aire para respirar.
+const DETECT_INTERVAL_MS = 120;
+
 /* --------------------------------- escaneo --------------------------------- */
 
 // corre el escaneo por `durationMs`, llama onProgress(0..1) seguido,
@@ -192,6 +198,7 @@ export async function runScan(videoEl, durationMs, onProgress) {
   const samples = { torso: [], cervical: [], shoulderTilt: [] };
   const shoulderVotes = { shoulderL: 0, shoulderR: 0 };
   let framesSeen = 0;
+  let lastDetectTime = 0;
 
   const start = performance.now();
 
@@ -201,7 +208,8 @@ export async function runScan(videoEl, durationMs, onProgress) {
       const elapsed = now - start;
       if (onProgress) onProgress(Math.min(1, elapsed / durationMs));
 
-      if (videoEl.readyState >= 2) {
+      if (videoEl.readyState >= 2 && now - lastDetectTime >= DETECT_INTERVAL_MS) {
+        lastDetectTime = now;
         const result = landmarker.detectForVideo(videoEl, now);
         const lm = result && result.worldLandmarks && result.worldLandmarks[0];
         if (lm) {
