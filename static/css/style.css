@@ -629,23 +629,6 @@ html, body {
   z-index: 3;
 }
 
-.pl-scan-sweep {
-  position: absolute;
-  left: 8%;
-  right: 8%;
-  height: 3px;
-  z-index: 2;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, var(--secondary), var(--primary), var(--secondary), transparent);
-  box-shadow: 0 0 18px 3px rgba(34, 211, 238, 0.55);
-  animation: pl-sweep-move 1.8s ease-in-out infinite;
-}
-@keyframes pl-sweep-move {
-  0% { top: 18%; opacity: 0.4; }
-  50% { top: 82%; opacity: 1; }
-  100% { top: 18%; opacity: 0.4; }
-}
-
 .pl-camera-preview {
   position: absolute;
   bottom: 20px;

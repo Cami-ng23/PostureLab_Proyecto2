@@ -5,9 +5,6 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    # Por ahora la home ES el simulador. Cuando agregues login/dashboard
-    # (según tu documento, con SQLite para las evaluaciones), esta ruta
-    # pasará a ser el dashboard y el simulador se mueve a /simulador.
     return render_template("simulador.html")
 
 

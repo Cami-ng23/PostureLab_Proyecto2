@@ -120,7 +120,6 @@ const el = {
   scanButton: document.getElementById("scan-button"),
   scanBadge: document.getElementById("scan-badge"),
   scanPercent: document.getElementById("scan-percent"),
-  scanSweep: document.getElementById("scan-sweep"),
   cameraPreview: document.getElementById("camera-preview"),
   cameraError: document.getElementById("camera-error"),
   gaugeNeedle: document.getElementById("gauge-needle"),
@@ -356,14 +355,12 @@ async function startScan() {
   el.cameraError.hidden = true;
   setScanningCard();
   el.scanBadge.hidden = false;
-  el.scanSweep.hidden = false;
   el.scanPercent.textContent = "0%";
 
   function recoverToIdle(message) {
     el.cameraError.textContent = message;
     el.cameraError.hidden = false;
     el.scanBadge.hidden = true;
-    el.scanSweep.hidden = true;
     el.cameraPreview.hidden = true;
     stopCamera(el.cameraPreview);
     uiState = "idle";
@@ -399,7 +396,6 @@ async function startScan() {
   stopCamera(el.cameraPreview);
   el.cameraPreview.hidden = true;
   el.scanBadge.hidden = true;
-  el.scanSweep.hidden = true;
 
   applyScanResult(result);
 
@@ -523,6 +519,37 @@ scene.add(grid);
 const root = new THREE.Group();
 scene.add(root);
 
+/* ------------------------ aro de escaneo (3D) ------------------------ */
+// aro real que rodea el cuerpo y sube/baja durante el escaneo — en vez de
+// una barra plana en CSS, esto vive en la escena 3D así que la perspectiva
+// y la profundidad (queda "detrás" del brazo cuando corresponde) son reales.
+const scanRingGeo = new THREE.TorusGeometry(0.3, 0.006, 8, 64);
+const scanRingMat = new THREE.MeshBasicMaterial({
+  color: 0x22d3ee,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const scanRing = new THREE.Mesh(scanRingGeo, scanRingMat);
+scanRing.rotation.x = Math.PI / 2;
+scanRing.visible = false;
+root.add(scanRing);
+
+const scanGlowGeo = new THREE.CircleGeometry(0.34, 48);
+const scanGlowMat = new THREE.MeshBasicMaterial({
+  color: 0x22d3ee,
+  transparent: true,
+  opacity: 0.1,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+const scanGlow = new THREE.Mesh(scanGlowGeo, scanGlowMat);
+scanGlow.rotation.x = Math.PI / 2;
+scanGlow.visible = false;
+root.add(scanGlow);
+
 window.addEventListener("resize", () => {
   camera.aspect = wrap.clientWidth / wrap.clientHeight;
   camera.updateProjectionMatrix();
@@ -615,10 +642,30 @@ function animate() {
   poseCurrent.torso += (poseTarget.torso - poseCurrent.torso) * LERP;
   poseCurrent.shoulderTilt += (poseTarget.shoulderTilt - poseCurrent.shoulderTilt) * LERP;
 
-  if (poseNodes.neck) poseNodes.neck.node.rotation.x = poseNodes.neck.rest.x + poseCurrent.neck;
-  if (poseNodes.chest) poseNodes.chest.node.rotation.x = poseNodes.chest.rest.x + poseCurrent.torso;
+  // balanceo sutil (tipo "respiración") mientras se escanea, para que el
+  // avatar no se sienta estático durante los 5s — puramente cosmético, no
+  // depende de la cámara ni toca el timing de detección.
+  const scanSway = uiState === "scanning" ? Math.sin(clock.elapsedTime * 1.8) * 0.025 : 0;
+  const scanSwayNeck = uiState === "scanning" ? Math.sin(clock.elapsedTime * 1.8 + 0.4) * 0.015 : 0;
+
+  if (poseNodes.neck) poseNodes.neck.node.rotation.x = poseNodes.neck.rest.x + poseCurrent.neck + scanSwayNeck;
+  if (poseNodes.chest) poseNodes.chest.node.rotation.x = poseNodes.chest.rest.x + poseCurrent.torso + scanSway;
   if (poseNodes.shoulderL) poseNodes.shoulderL.node.rotation.z = poseNodes.shoulderL.rest.z + poseCurrent.shoulderTilt;
   if (poseNodes.shoulderR) poseNodes.shoulderR.node.rotation.z = poseNodes.shoulderR.rest.z + poseCurrent.shoulderTilt;
+
+  // aro de escaneo 3D: sube y baja de los pies a la cabeza mientras dura el escaneo
+  if (uiState === "scanning") {
+    scanRing.visible = true;
+    scanGlow.visible = true;
+    const sweepT = (Math.sin(clock.elapsedTime * 1.3) + 1) / 2; // 0..1 vaivén
+    const y = THREE.MathUtils.lerp(0.05, 1.6, sweepT);
+    scanRing.position.y = y;
+    scanGlow.position.y = y;
+    scanRingMat.opacity = 0.75 + Math.sin(clock.elapsedTime * 6) * 0.15;
+  } else {
+    scanRing.visible = false;
+    scanGlow.visible = false;
+  }
 
   ZONE_KEYS.forEach((z) => {
     const targetHex = zoneTargets[z] || GOOD;
