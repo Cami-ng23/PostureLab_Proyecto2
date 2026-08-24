@@ -162,7 +162,13 @@
 
   </div>
 
-  <script type="importmap">
+  <!-- Polyfill de import maps: necesario para navegadores móviles que aún no
+       soportan import maps nativamente (Safari iOS viejo, Samsung Internet,
+       algunos Chrome Android antiguos). Sin esto, el script de abajo no
+       corre en esos navegadores y el avatar nunca aparece, sin error visible. -->
+  <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
+  <script type="importmap-shim">
   {
     "imports": {
       "three": "{{ url_for('static', filename='js/vendor/three/build/three.module.js') }}",
@@ -174,6 +180,6 @@
     // Flask nos da la URL correcta del asset (con el hash/ruta de static que corresponda)
     window.PL_GLB_URL = "{{ url_for('static', filename='assets/posturelab_mannequin.glb') }}";
   </script>
-  <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script type="module-shim" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
