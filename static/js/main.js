@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { startCamera, stopCamera, runScan } from "./posture-scan.js";
+import { startCamera, stopCamera, runScan, preloadModel } from "./posture-scan.js";
 
 /* ------------------------------------------------------------------ */
 /*  PostureLab · Escaneo real de postura con cámara                    */
@@ -343,6 +343,7 @@ function applyScanResult(result) {
 
 setIdleCard();
 renderZonesList(false);
+preloadModel();
 
 /* -------------------- orquestación del escaneo -------------------- */
 

@@ -32,6 +32,16 @@ const IDX = {
 
 let landmarkerPromise = null;
 
+// Se llama apenas carga la página (no espera al click en "Iniciar escaneo").
+// Así, cuando el usuario realmente escanea, el modelo ya está descargado y
+// compilado — la descarga/compilación del WASM+modelo es lo más pesado y
+// antes pasaba recién al apretar el botón, generando el lag "al iniciar".
+// Los errores se ignoran acá a propósito: si falla, runScan() lo va a
+// reintentar y mostrar el error real en su momento.
+export function preloadModel() {
+  getLandmarker().catch(() => {});
+}
+
 function getLandmarker() {
   if (!landmarkerPromise) {
     landmarkerPromise = Promise.race([
@@ -185,9 +195,9 @@ function reliableMedian(arr, minSamples, maxStd) {
 
 // no hace falta correr la detección en cada frame (hasta 60 veces/seg):
 // con el modelo "full" eso bloquea el hilo principal y congela el render
-// del avatar. Con ~8 veces/seg sobran muestras para la mediana en 5s, y el
-// render de Three.js (que corre en el mismo hilo) tiene aire para respirar.
-const DETECT_INTERVAL_MS = 120;
+// del avatar. Con ~5 veces/seg sobran muestras para la mediana en 5s, y el
+// render de Three.js (que corre en el mismo hilo) tiene bastante más aire.
+const DETECT_INTERVAL_MS = 200;
 
 /* --------------------------------- escaneo --------------------------------- */
 
