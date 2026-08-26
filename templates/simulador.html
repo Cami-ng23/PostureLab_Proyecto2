@@ -141,9 +141,9 @@
         </div>
         <div class="pl-gauge-body">
           <svg viewBox="0 0 200 105" class="pl-gauge-svg">
-            <path d="M20,95 A80,80 0 0 1 60,25.72" fill="none" stroke="#10b981" stroke-width="10" stroke-linecap="round"/>
-            <path d="M60,25.72 A80,80 0 0 1 156.57,38.43" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round"/>
-            <path d="M156.57,38.43 A80,80 0 0 1 180,95" fill="none" stroke="#8b5cf6" stroke-width="10" stroke-linecap="round"/>
+            <path d="M20,95 A80,80 0 0 1 108.36,15.44" fill="none" stroke="#10b981" stroke-width="10" stroke-linecap="round"/>
+            <path d="M108.36,15.44 A80,80 0 0 1 169.28,55" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round"/>
+            <path d="M169.28,55 A80,80 0 0 1 180,95" fill="none" stroke="#8b5cf6" stroke-width="10" stroke-linecap="round"/>
             <g id="gauge-needle" transform="rotate(180 100 95)">
               <line x1="100" y1="95" x2="165" y2="95" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/>
             </g>
@@ -162,13 +162,7 @@
 
   </div>
 
-  <!-- Polyfill de import maps: necesario para navegadores móviles que aún no
-       soportan import maps nativamente (Safari iOS viejo, Samsung Internet,
-       algunos Chrome Android antiguos). Sin esto, el script de abajo no
-       corre en esos navegadores y el avatar nunca aparece, sin error visible. -->
-  <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
-
-  <script type="importmap-shim">
+  <script type="importmap">
   {
     "imports": {
       "three": "{{ url_for('static', filename='js/vendor/three/build/three.module.js') }}",
@@ -180,6 +174,6 @@
     // Flask nos da la URL correcta del asset (con el hash/ruta de static que corresponda)
     window.PL_GLB_URL = "{{ url_for('static', filename='assets/posturelab_mannequin.glb') }}";
   </script>
-  <script type="module-shim" src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
