@@ -38,7 +38,7 @@ function severityColor(issueCount, hasSevereIssue) {
 // Umbrales conservadores: preferimos un falso negativo (no marcar algo leve)
 // antes que un falso positivo (marcar a alguien con buena postura). Si tras
 // probar con gente real hace falta ajustar, son estos 3 números nada más.
-const THRESHOLDS = { cervical: 32, torso: 20, shoulder: 9 };
+const THRESHOLDS = { cervical: 32, torso: 26, shoulder: 9 };
 
 // GLTFLoader sanea node.name quitando los puntos (los usa como separador de
 // rutas de animación), así que "shoulder.L" termina en el árbol como
@@ -277,7 +277,7 @@ function applyScanResult(result) {
   const zones = [];
   if (cervicalBad) zones.push("neck");
   if (cervicalSevere) zones.push("head");
-  if (torsoBad) zones.push("upperSpine", "lowerSpine");
+  if (torsoBad) zones.push("upperSpine"); // una sola métrica (línea hombro-cadera) = una sola zona real
   if (shoulderBad) zones.push(result.lowerShoulder);
 
   const zoneSet = new Set(zones);
