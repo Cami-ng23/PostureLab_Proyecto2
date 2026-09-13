@@ -68,12 +68,36 @@ const ZONE_KEYS = Object.keys(ZONE_NODE_NAMES);
 
 // texto breve para el panel que aparece al hacer click en una zona
 const ZONE_INFO = {
-  head: { label: "Cabeza", risk: "Llevar la cabeza muy adelantada cansa el cuello y puede darte dolores de cabeza seguidos." },
-  neck: { label: "Cuello", risk: "Encorvar el cuello hacia adelante por mucho rato puede darte dolor de cuello y dolores de cabeza." },
-  shoulderL: { label: "Hombro izquierdo", risk: "Cargar más un hombro que el otro puede generar dolor que se corre hasta el brazo." },
-  shoulderR: { label: "Hombro derecho", risk: "Cargar más un hombro que el otro puede generar dolor que se corre hasta el brazo." },
-  upperSpine: { label: "Espalda alta", risk: "Encorvar la espalda alta puede generar dolor de espalda y hacer que te canses más rápido." },
-  lowerSpine: { label: "Espalda baja", risk: "Estar mal sentado presiona la espalda baja y con el tiempo puede darte dolor lumbar." },
+  head: {
+    label: "Cabeza",
+    risk: "Llevar la cabeza muy adelantada cansa el cuello y puede darte dolores de cabeza seguidos.",
+    exercise: "Retracción cervical: llevá el mentón hacia atrás (como haciendo doble papada), sostené 5 segundos, repetí 10 veces.",
+  },
+  neck: {
+    label: "Cuello",
+    risk: "Encorvar el cuello hacia adelante por mucho rato puede darte dolor de cuello y dolores de cabeza.",
+    exercise: "Llevá la oreja hacia el hombro contrario suavemente, sostené 15 segundos, repetí 3 veces por lado.",
+  },
+  shoulderL: {
+    label: "Hombro izquierdo",
+    risk: "Cargar más un hombro que el otro puede generar dolor que se corre hasta el brazo.",
+    exercise: "Rotá ambos hombros hacia atrás 10 veces, después apretá los omóplatos entre sí y sostené 5 segundos.",
+  },
+  shoulderR: {
+    label: "Hombro derecho",
+    risk: "Cargar más un hombro que el otro puede generar dolor que se corre hasta el brazo.",
+    exercise: "Rotá ambos hombros hacia atrás 10 veces, después apretá los omóplatos entre sí y sostené 5 segundos.",
+  },
+  upperSpine: {
+    label: "Espalda alta",
+    risk: "Encorvar la espalda alta puede generar dolor de espalda y hacer que te canses más rápido.",
+    exercise: "Entrelazá los dedos, estirá los brazos hacia adelante redondeando la espalda alta, sostené 15 segundos.",
+  },
+  lowerSpine: {
+    label: "Espalda baja",
+    risk: "Estar mal sentado presiona la espalda baja y con el tiempo puede darte dolor lumbar.",
+    exercise: "Sentado, girá suavemente el torso hacia un lado sosteniéndote del respaldo, 10 segundos por lado.",
+  },
 };
 
 /* ---------------------------- estado UI ---------------------------- */
@@ -88,7 +112,8 @@ const zoneObjects = {}; // zona -> array de meshes
 const meshToZone = new Map(); // mesh -> zona (para el raycaster de click)
 let poseNodes = {};
 let rimLight = null;
-let rimTarget = new THREE.Color(GOOD);
+const ACCENT_LIGHT = "#22D3EE"; // luz de acento fija, ya no cambia con el resultado
+let rimTarget = new THREE.Color(ACCENT_LIGHT);
 let rimCurrent = new THREE.Color(GOOD);
 let history = [];
 let activeZone = null;
@@ -115,6 +140,8 @@ const el = {
   metric3Bar: document.getElementById("metric3-bar"),
   progressBar: document.getElementById("progress-bar"),
   historyList: document.getElementById("history-list"),
+  recommendations: document.getElementById("recommendations"),
+  recoList: document.getElementById("reco-list"),
   modelError: document.getElementById("model-error"),
   zonePopup: document.getElementById("zone-popup"),
   zonePopupTitle: document.getElementById("zone-popup-title"),
@@ -210,9 +237,9 @@ function resetToNeutral() {
   poseTarget.neck = 0;
   poseTarget.torso = 0;
   poseTarget.shoulderTilt = 0;
-  rimTarget = new THREE.Color(GOOD);
   updateGauge(null);
   renderZonesList(false);
+  renderRecommendations([]);
   setIdleCard();
 }
 
@@ -248,6 +275,29 @@ function buildLabel(zones) {
   return `${labels.slice(0, -1).join(", ")} y ${labels[labels.length - 1]} afectados`;
 }
 
+function renderRecommendations(zones) {
+  if (zones.length === 0) {
+    el.recommendations.hidden = true;
+    return;
+  }
+  const seenExercise = new Set();
+  const items = [];
+  zones.forEach((z) => {
+    const info = ZONE_INFO[z];
+    if (!seenExercise.has(info.exercise)) {
+      seenExercise.add(info.exercise);
+      items.push(info);
+    }
+  });
+  el.recoList.innerHTML = items
+    .map(
+      (info) =>
+        `<div class="pl-reco-item"><span class="pl-reco-icon">✓</span><div><div class="pl-reco-zone">${info.label}</div><div class="pl-reco-exercise">${info.exercise}</div></div></div>`
+    )
+    .join("");
+  el.recommendations.hidden = false;
+}
+
 function applyScanResult(result) {
   lastResult = result;
 
@@ -263,9 +313,9 @@ function applyScanResult(result) {
       ? "Te detectamos, pero no con suficiente confianza. Probá con ropa más ajustada (sin polerón/capucha suelta), buena luz de frente, y que se vea tu torso completo."
       : "No detectamos a nadie frente a la cámara. Ubicate en el encuadre, con buena luz, y probá de nuevo.";
     ZONE_KEYS.forEach((z) => (zoneTargets[z] = GOOD));
-    rimTarget = new THREE.Color(GOOD);
     updateGauge(null);
     renderZonesList(false);
+    renderRecommendations([]);
     return;
   }
 
@@ -288,7 +338,6 @@ function applyScanResult(result) {
   const ok = zones.length === 0;
   const issueCount = [cervicalBad, torsoBad, shoulderBad].filter(Boolean).length;
   const severity = severityColor(issueCount, cervicalSevere);
-  rimTarget = new THREE.Color(severity);
 
   poseTarget.neck = angleToPoseRad(result.cervicalAngle, 6, 45);
   poseTarget.torso = angleToPoseRad(result.torsoAngle, 4, 35);
@@ -332,6 +381,7 @@ function applyScanResult(result) {
 
   updateGauge(result.cervicalAngle, cervicalBad, cervicalSevere);
   renderZonesList(true);
+  renderRecommendations(zones);
 
   history = [{ label: buildLabel(zones), color: ok ? GOOD : severity, t: Date.now() }, ...history].slice(0, 4);
   el.historyList.innerHTML = history
@@ -346,6 +396,7 @@ function applyScanResult(result) {
 
 setIdleCard();
 renderZonesList(false);
+renderRecommendations([]);
 preloadModel();
 
 /* -------------------- orquestación del escaneo -------------------- */
@@ -512,7 +563,7 @@ scene.add(key);
 const fill = new THREE.DirectionalLight(0x22d3ee, 0.3);
 fill.position.set(-3, 1.5, -2);
 scene.add(fill);
-rimLight = new THREE.DirectionalLight(GOOD, 0.9);
+rimLight = new THREE.DirectionalLight(ACCENT_LIGHT, 0.9);
 rimLight.position.set(-1.5, 2, -3.5);
 scene.add(rimLight);
 

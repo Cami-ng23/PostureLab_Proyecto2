@@ -469,6 +469,52 @@ html, body {
   line-height: 1.5;
 }
 
+/* --------------------------- recomendaciones -------------------------------- */
+
+.pl-reco {
+  background: linear-gradient(155deg, var(--card), rgba(21, 28, 44, 0.85));
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  animation: pl-fade-up 0.4s ease;
+}
+.pl-reco-title {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+.pl-reco-item {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.pl-reco-item:first-child { border-top: none; padding-top: 0; }
+.pl-reco-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--good);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pl-reco-zone {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.pl-reco-exercise {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
 .pl-footer {
   margin-top: auto;
   padding-top: 14px;
@@ -627,6 +673,23 @@ html, body {
   padding: 6px 12px;
   border-radius: 999px;
   z-index: 3;
+}
+
+.pl-scan-sweep {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 3px;
+  z-index: 2;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--secondary), var(--primary), var(--secondary), transparent);
+  box-shadow: 0 0 18px 3px rgba(34, 211, 238, 0.55);
+  animation: pl-sweep-move 1.8s ease-in-out infinite;
+}
+@keyframes pl-sweep-move {
+  0% { top: 18%; opacity: 0.4; }
+  50% { top: 82%; opacity: 1; }
+  100% { top: 18%; opacity: 0.4; }
 }
 
 .pl-camera-preview {
