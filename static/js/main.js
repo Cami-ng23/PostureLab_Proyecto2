@@ -20,6 +20,44 @@ const REF = "#475569";
 const WARN = "#F59E0B";
 const SEVERE = "#8B5CF6";
 
+/* --------------------------- modo prueba (sin cámara) --------------------------- */
+// Para probar todo el flujo (colores, popup, sesión, ventana flotante...) sin
+// depender de una cámara real. Genera resultados variados: a veces postura
+// perfecta, a veces 1-3 zonas afectadas, a veces "no se detectó nadie" — así
+// se ejercitan los mismos caminos que con la cámara real, con el MISMO
+// applyScanResult/umbrales, solo que los números de entrada son al azar.
+let simulateMode = false;
+
+function simulateResult() {
+  const r = Math.random();
+  if (r < 0.08) return { success: false, reason: "no-person" };
+  if (r < 0.16) return { success: false, reason: "low-confidence" };
+  return {
+    success: true,
+    cervicalAngle: Math.random() * 48,
+    torsoAngle: Math.random() * 36,
+    shoulderTiltAngle: Math.random() * 16,
+    lowerShoulder: Math.random() < 0.5 ? "shoulderL" : "shoulderR",
+    framesSeen: 30,
+  };
+}
+
+// misma firma que runScan(videoEl, durationMs, onProgress), pero sin tocar
+// la cámara ni el modelo — solo simula el paso del tiempo para que la barra
+// de progreso y el aro 3D se vean exactamente igual que en un escaneo real.
+function fakeScan(durationMs, onProgress) {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    function step() {
+      const elapsed = performance.now() - start;
+      if (onProgress) onProgress(Math.min(1, elapsed / durationMs));
+      if (elapsed < durationMs) requestAnimationFrame(step);
+      else resolve(simulateResult());
+    }
+    requestAnimationFrame(step);
+  });
+}
+
 function hexToRgba(hex, alpha) {
   const n = parseInt(hex.replace("#", ""), 16);
   const r = (n >> 16) & 255;
@@ -116,6 +154,135 @@ const ACCENT_LIGHT = "#22D3EE"; // luz de acento fija, ya no cambia con el resul
 let rimTarget = new THREE.Color(ACCENT_LIGHT);
 let rimCurrent = new THREE.Color(GOOD);
 let history = [];
+
+/* ------------------------- modo sesión prolongada ------------------------- */
+// En vez de un solo escaneo de 5s, esta sesión deja la cámara prendida y
+// hace un chequeo automático cada SESSION_INTERVAL_MS mientras trabajás,
+// acumulando estadísticas reales (nada de datos inventados).
+const SESSION_INTERVAL_MS = 60000; // 1 minuto entre chequeos — ajustable
+
+let sessionActive = false;
+let sessionStats = null; // { startTime, checks, goodChecks, zoneBad: {zona: count} }
+let sessionTimer = null;
+
+function renderSessionSummary() {
+  if (!sessionStats) return;
+  el.sessionChecks.textContent = sessionStats.checks;
+  const pctGood = sessionStats.checks ? Math.round((sessionStats.goodChecks / sessionStats.checks) * 100) : 0;
+  el.sessionPct.textContent = `${pctGood}%`;
+
+  const rows = ZONE_KEYS.map((z) => ({ z, count: sessionStats.zoneBad[z] || 0 }))
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  el.sessionZones.innerHTML = rows.length
+    ? rows
+        .map(
+          (r) =>
+            `<div class="pl-session-zone-row"><span>${ZONE_INFO[r.z].label}</span><span class="mono">${r.count}×</span></div>`
+        )
+        .join("")
+    : `<div class="pl-session-empty">Sin zonas afectadas todavía</div>`;
+}
+
+// chequeo automático de la sesión: reutiliza el mismo runScan/applyScanResult
+// del escaneo manual, así el criterio de "bueno/malo" es siempre el mismo.
+async function runSessionCheck() {
+  if (!sessionActive) return;
+  if (uiState === "scanning") {
+    scheduleNextCheck();
+    return;
+  }
+  uiState = "scanning";
+  paused = false;
+  setScanningCard();
+  el.scanBadge.hidden = false;
+  el.scanPercent.textContent = "0%";
+
+  let result;
+  try {
+    result = simulateMode
+      ? await fakeScan(SCAN_MS, (progress) => {
+          el.scanPercent.textContent = `${Math.round(progress * 100)}%`;
+          el.progressBar.style.width = `${progress * 100}%`;
+        })
+      : await runScan(el.cameraPreview, SCAN_MS, (progress) => {
+          el.scanPercent.textContent = `${Math.round(progress * 100)}%`;
+          el.progressBar.style.width = `${progress * 100}%`;
+        });
+  } catch (err) {
+    console.error("Error en chequeo de sesión:", err);
+    result = { success: false, reason: "low-confidence" };
+  }
+
+  el.scanBadge.hidden = true;
+  applyScanResult(result);
+  uiState = "result";
+  holdElapsed = 0;
+
+  if (result.success && sessionActive) {
+    sessionStats.checks++;
+    let anyBad = false;
+    ZONE_KEYS.forEach((z) => {
+      if (zoneTargets[z] === BAD) {
+        anyBad = true;
+        sessionStats.zoneBad[z] = (sessionStats.zoneBad[z] || 0) + 1;
+      }
+    });
+    if (!anyBad) sessionStats.goodChecks++;
+    renderSessionSummary();
+  }
+
+  scheduleNextCheck();
+}
+
+function scheduleNextCheck() {
+  clearTimeout(sessionTimer);
+  if (!sessionActive) return;
+  sessionTimer = setTimeout(runSessionCheck, SESSION_INTERVAL_MS);
+}
+
+async function startSession() {
+  if (sessionActive || uiState === "scanning") return;
+  sessionActive = true;
+  sessionStats = { startTime: Date.now(), checks: 0, goodChecks: 0, zoneBad: {} };
+  el.sessionButton.textContent = "Detener sesión";
+  el.sessionSummary.hidden = false;
+  el.scanButton.disabled = true; // evita solapar con un escaneo manual suelto
+  el.cameraError.hidden = true;
+  renderSessionSummary();
+
+  if (!simulateMode) {
+    try {
+      await startCamera(el.cameraPreview);
+    } catch (err) {
+      console.error("No se pudo iniciar la sesión (cámara):", err);
+      el.cameraError.textContent = "No pudimos acceder a tu cámara para iniciar la sesión.";
+      el.cameraError.hidden = false;
+      sessionActive = false;
+      el.sessionButton.textContent = "Iniciar sesión de seguimiento";
+      el.scanButton.disabled = false;
+      return;
+    }
+    el.cameraPreview.hidden = false;
+  }
+  runSessionCheck(); // primer chequeo ya mismo, no espera el primer intervalo
+}
+
+function stopSession() {
+  sessionActive = false;
+  clearTimeout(sessionTimer);
+  if (!simulateMode) {
+    stopCamera(el.cameraPreview);
+    el.cameraPreview.hidden = true;
+  }
+  el.sessionButton.textContent = "Iniciar sesión de seguimiento";
+  el.scanButton.disabled = false;
+  uiState = "idle";
+  resetToNeutral();
+  // el resumen final se queda visible, no lo ocultamos
+}
+
 let activeZone = null;
 let lastPopupX = 0;
 let lastPopupY = 0;
@@ -156,6 +323,13 @@ const el = {
   gaugeNumber: document.getElementById("gauge-number"),
   gaugeSeverity: document.getElementById("gauge-severity"),
   zonesList: document.getElementById("zones-list"),
+  sessionButton: document.getElementById("session-button"),
+  sessionSummary: document.getElementById("session-summary"),
+  sessionChecks: document.getElementById("session-checks"),
+  sessionPct: document.getElementById("session-pct"),
+  sessionZones: document.getElementById("session-zones"),
+  pipButton: document.getElementById("pip-button"),
+  pipPlaceholder: document.getElementById("pip-placeholder"),
 };
 
 const ICON_OK = `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`;
@@ -266,6 +440,17 @@ function buildDiagnosis(zones) {
     }
   });
   return risks.join(" ");
+}
+
+function renderHistory() {
+  el.historyList.innerHTML = history.length
+    ? history
+        .map(
+          (h) =>
+            `<div class="pl-history-row"><i class="dot" style="background:${h.color}"></i>${h.label}</div>`
+        )
+        .join("")
+    : `<div class="pl-history-empty">Sin escaneos todavía</div>`;
 }
 
 function buildLabel(zones) {
@@ -384,12 +569,7 @@ function applyScanResult(result) {
   renderRecommendations(zones);
 
   history = [{ label: buildLabel(zones), color: ok ? GOOD : severity, t: Date.now() }, ...history].slice(0, 4);
-  el.historyList.innerHTML = history
-    .map(
-      (h) =>
-        `<div class="pl-history-row"><i class="dot" style="background:${h.color}"></i>${h.label}</div>`
-    )
-    .join("");
+  renderHistory();
 
   if (activeZone) openZonePopup(activeZone, lastPopupX, lastPopupY);
 }
@@ -397,12 +577,13 @@ function applyScanResult(result) {
 setIdleCard();
 renderZonesList(false);
 renderRecommendations([]);
+renderHistory();
 preloadModel();
 
 /* -------------------- orquestación del escaneo -------------------- */
 
 async function startScan() {
-  if (uiState === "scanning") return;
+  if (uiState === "scanning" || sessionActive) return;
   uiState = "scanning";
   paused = false;
   el.scanButton.disabled = true;
@@ -424,22 +605,28 @@ async function startScan() {
     setIdleCard();
   }
 
-  try {
-    await startCamera(el.cameraPreview);
-  } catch (err) {
-    console.error("No se pudo acceder a la cámara:", err);
-    recoverToIdle("No pudimos acceder a tu cámara. Revisá los permisos del navegador e intentá de nuevo.");
-    return;
+  if (!simulateMode) {
+    try {
+      await startCamera(el.cameraPreview);
+    } catch (err) {
+      console.error("No se pudo acceder a la cámara:", err);
+      recoverToIdle("No pudimos acceder a tu cámara. Revisá los permisos del navegador e intentá de nuevo.");
+      return;
+    }
+    el.cameraPreview.hidden = false;
   }
-
-  el.cameraPreview.hidden = false;
 
   let result;
   try {
-    result = await runScan(el.cameraPreview, SCAN_MS, (progress) => {
-      el.scanPercent.textContent = `${Math.round(progress * 100)}%`;
-      el.progressBar.style.width = `${progress * 100}%`;
-    });
+    result = simulateMode
+      ? await fakeScan(SCAN_MS, (progress) => {
+          el.scanPercent.textContent = `${Math.round(progress * 100)}%`;
+          el.progressBar.style.width = `${progress * 100}%`;
+        })
+      : await runScan(el.cameraPreview, SCAN_MS, (progress) => {
+          el.scanPercent.textContent = `${Math.round(progress * 100)}%`;
+          el.progressBar.style.width = `${progress * 100}%`;
+        });
   } catch (err) {
     console.error("Error durante el escaneo:", err);
     recoverToIdle(
@@ -448,8 +635,10 @@ async function startScan() {
     return;
   }
 
-  stopCamera(el.cameraPreview);
-  el.cameraPreview.hidden = true;
+  if (!simulateMode) {
+    stopCamera(el.cameraPreview);
+    el.cameraPreview.hidden = true;
+  }
   el.scanBadge.hidden = true;
 
   applyScanResult(result);
@@ -461,6 +650,15 @@ async function startScan() {
 }
 
 el.scanButton.addEventListener("click", startScan);
+el.sessionButton.addEventListener("click", () => {
+  if (sessionActive) stopSession();
+  else startSession();
+});
+
+const simulateToggle = document.getElementById("simulate-toggle");
+simulateToggle.addEventListener("change", () => {
+  simulateMode = simulateToggle.checked;
+});
 
 function tickHold(dtMs) {
   if (uiState !== "result" || paused) return;
@@ -605,10 +803,68 @@ scanGlow.rotation.x = Math.PI / 2;
 scanGlow.visible = false;
 root.add(scanGlow);
 
-window.addEventListener("resize", () => {
-  camera.aspect = wrap.clientWidth / wrap.clientHeight;
+/* --------------------- ventana flotante (Picture-in-Picture) --------------------- */
+// Mueve el mismo canvas 3D (sin recrearlo, así no se pierde el contexto
+// WebGL) a una ventana chica siempre-arriba-de-todo, para poder seguir
+// viendo al avatar mientras trabajás en otra ventana. Chrome/Edge la abren
+// por defecto abajo a la derecha — esa posición exacta la decide el
+// navegador, no se puede fijar por seguridad.
+let pipWindow = null;
+const pipSupported = "documentPictureInPicture" in window;
+
+function currentRenderTarget() {
+  return pipWindow || window;
+}
+
+function resizeToTarget() {
+  const w = pipWindow ? pipWindow.innerWidth : wrap.clientWidth;
+  const h = pipWindow ? pipWindow.innerHeight : wrap.clientHeight;
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  renderer.setSize(w, h);
+}
+
+async function openPip() {
+  if (!pipSupported || pipWindow) return;
+  pipWindow = await documentPictureInPicture.requestWindow({ width: 260, height: 320 });
+  pipWindow.document.title = "PostureLab";
+  pipWindow.document.body.style.margin = "0";
+  pipWindow.document.body.style.background = "#070b14";
+  pipWindow.document.body.style.overflow = "hidden";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.display = "block";
+  pipWindow.document.body.append(canvas);
+  el.pipPlaceholder.hidden = false;
+  el.pipButton.textContent = "Volver al panel";
+  resizeToTarget();
+  pipWindow.addEventListener("resize", resizeToTarget);
+  pipWindow.addEventListener("pagehide", () => {
+    pipWindow = null;
+    wrap.appendChild(canvas);
+    canvas.style.width = "";
+    canvas.style.height = "";
+    el.pipPlaceholder.hidden = true;
+    el.pipButton.textContent = "Ventana flotante";
+    resizeToTarget();
+  });
+}
+
+function closePip() {
+  if (pipWindow) pipWindow.close(); // dispara "pagehide", que hace la limpieza
+}
+
+if (el.pipButton) {
+  if (pipSupported) {
+    el.pipButton.hidden = false;
+    el.pipButton.addEventListener("click", () => (pipWindow ? closePip() : openPip()));
+  } else {
+    el.pipButton.hidden = true;
+  }
+}
+
+window.addEventListener("resize", () => {
+  if (!pipWindow) resizeToTarget();
 });
 
 const loader = new GLTFLoader();

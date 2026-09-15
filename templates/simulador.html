@@ -20,12 +20,35 @@
           <span>PostureLab · Escaneo</span>
         </div>
         <h1>Análisis postural</h1>
-        <p class="pl-sub">Escaneamos tu postura con la cámara durante 5 segundos. De frente o de lado, da lo mismo.</p>
+        <p class="pl-sub">Un escaneo puntual de 5 segundos, o una sesión que te va revisando solo mientras trabajás o estudiás.</p>
         <p id="model-error" class="pl-error" hidden>No se pudo cargar el modelo 3D (revisa la ruta de static/assets/posturelab_mannequin.glb).</p>
         <p id="camera-error" class="pl-error" hidden>No pudimos acceder a tu cámara. Revisá los permisos del navegador e intentá de nuevo.</p>
+        <label class="pl-sim-toggle">
+          <input type="checkbox" id="simulate-toggle" />
+          <span>Modo prueba (sin cámara, resultados simulados)</span>
+        </label>
       </div>
 
       <button id="scan-button" class="pl-scan-btn">Iniciar escaneo</button>
+      <button id="session-button" class="pl-scan-btn pl-scan-btn-secondary">Iniciar sesión de seguimiento</button>
+      <button id="pip-button" class="pl-scan-btn-ghost" hidden>Ventana flotante</button>
+
+      <div id="session-summary" class="pl-session-card" hidden>
+        <div class="pl-session-header">
+          <span class="pl-session-title mono">SESIÓN EN VIVO</span>
+        </div>
+        <div class="pl-session-stats">
+          <div class="pl-session-stat">
+            <span id="session-checks" class="pl-session-stat-num">0</span>
+            <span class="pl-session-stat-label">revisiones</span>
+          </div>
+          <div class="pl-session-stat">
+            <span id="session-pct" class="pl-session-stat-num">0%</span>
+            <span class="pl-session-stat-label">en buena postura</span>
+          </div>
+        </div>
+        <div id="session-zones" class="pl-session-zones"></div>
+      </div>
 
       <div id="status-card" class="pl-card">
         <div class="pl-bar thin pl-card-progress"><div id="progress-bar" class="pl-bar-fill gradient"></div></div>
@@ -78,38 +101,41 @@
         <div id="history-list"></div>
       </div>
 
-      <div class="pl-howto">
-        <div class="pl-howto-title mono">Cómo funciona</div>
-        <div class="pl-howto-step">
-          <span class="pl-howto-num">1</span>
-          <div>
-            <div class="pl-howto-step-title">Posicionate</div>
-            <div class="pl-howto-step-desc">Parate relajado frente a la cámara, de frente o de lado.</div>
-          </div>
-        </div>
-        <div class="pl-howto-step">
-          <span class="pl-howto-num">2</span>
-          <div>
-            <div class="pl-howto-step-title">Escaneamos</div>
-            <div class="pl-howto-step-desc">La cámara mide tu postura durante 5 segundos.</div>
-          </div>
-        </div>
-        <div class="pl-howto-step">
-          <span class="pl-howto-num">3</span>
-          <div>
-            <div class="pl-howto-step-title">Resultados</div>
-            <div class="pl-howto-step-desc">Te mostramos qué zonas están afectadas y por qué.</div>
-          </div>
-        </div>
-      </div>
+      <details class="pl-howto-details">
+        <summary class="pl-howto-summary mono">¿Cómo funciona? <span class="pl-chevron">▾</span></summary>
 
-      <div class="pl-tip">
-        <span class="pl-tip-icon">✦</span>
-        <div>
-          <div class="pl-tip-title">Consejo</div>
-          <div class="pl-tip-desc">Parate relajado, con los pies al ancho de los hombros. Si podés, usá ropa ajustada (sin polerón o campera suelta) para que la cámara mida mejor.</div>
+        <div class="pl-howto">
+          <div class="pl-howto-step">
+            <span class="pl-howto-num">1</span>
+            <div>
+              <div class="pl-howto-step-title">Posicionate</div>
+              <div class="pl-howto-step-desc">Parate relajado frente a la cámara, de frente o de lado.</div>
+            </div>
+          </div>
+          <div class="pl-howto-step">
+            <span class="pl-howto-num">2</span>
+            <div>
+              <div class="pl-howto-step-title">Escaneamos</div>
+              <div class="pl-howto-step-desc">La cámara mide tu postura durante 5 segundos.</div>
+            </div>
+          </div>
+          <div class="pl-howto-step">
+            <span class="pl-howto-num">3</span>
+            <div>
+              <div class="pl-howto-step-title">Resultados</div>
+              <div class="pl-howto-step-desc">Te mostramos qué zonas están afectadas y por qué.</div>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <div class="pl-tip">
+          <span class="pl-tip-icon">✦</span>
+          <div>
+            <div class="pl-tip-title">Consejo</div>
+            <div class="pl-tip-desc">Parate relajado, con los pies al ancho de los hombros. Si podés, usá ropa ajustada (sin polerón o campera suelta) para que la cámara mida mejor.</div>
+          </div>
+        </div>
+      </details>
 
       <div class="pl-footer">
         Modelo real: <code>posturelab_mannequin.glb</code> (maniquí "primitive_realistic" recortado del bundle, ~0.42MB).
@@ -129,6 +155,11 @@
         <div class="ring"></div>
       </div>
       <canvas id="scene"></canvas>
+
+      <div id="pip-placeholder" class="pl-pip-placeholder" hidden>
+        <span>🗗</span>
+        <p>El avatar está en la ventana flotante</p>
+      </div>
       <video id="camera-preview" class="pl-camera-preview" autoplay muted playsinline hidden></video>
 
       <div id="zone-popup" class="pl-zone-popup" hidden>

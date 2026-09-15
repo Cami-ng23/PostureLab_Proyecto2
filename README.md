@@ -22,10 +22,10 @@ posturelab-flask/
 
 ```bash
 cd posturelab-flask
-python -m venv venv
-venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate        # en Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python app.py
+python3 app.py
 ```
 
 Abre `http://127.0.0.1:5000`.
