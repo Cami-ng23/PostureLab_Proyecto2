@@ -267,6 +267,7 @@ async function startSession() {
     el.cameraPreview.hidden = false;
   }
   runSessionCheck(); // primer chequeo ya mismo, no espera el primer intervalo
+  if (pipSupported) openPip(); // el avatar pasa a la ventanita mientras trabajás
 }
 
 function stopSession() {
@@ -276,6 +277,7 @@ function stopSession() {
     stopCamera(el.cameraPreview);
     el.cameraPreview.hidden = true;
   }
+  if (pipWindow) closePip();
   el.sessionButton.textContent = "Iniciar sesión de seguimiento";
   el.scanButton.disabled = false;
   uiState = "idle";
@@ -392,7 +394,10 @@ function updateGauge(cervicalAngle, cervicalBad, cervicalSevere) {
 
 function setIdleCard() {
   el.statusCard.classList.remove("bad");
+  el.statusCard.style.borderColor = "";
   el.statusTag.classList.remove("bad");
+  el.statusTag.style.color = "";
+  el.statusTag.style.background = "";
   el.statusTag.textContent = lastResult ? "Listo para volver a escanear" : "En espera";
   el.statusIcon.innerHTML = ICON_SCAN;
   el.statusIcon.setAttribute("stroke", "#94a3b8");
@@ -826,10 +831,10 @@ function resizeToTarget() {
 
 async function openPip() {
   if (!pipSupported || pipWindow) return;
-  pipWindow = await documentPictureInPicture.requestWindow({ width: 260, height: 320 });
+  pipWindow = await documentPictureInPicture.requestWindow({ width: 160, height: 200 });
   pipWindow.document.title = "PostureLab";
   pipWindow.document.body.style.margin = "0";
-  pipWindow.document.body.style.background = "#070b14";
+  pipWindow.document.body.style.background = "transparent";
   pipWindow.document.body.style.overflow = "hidden";
   canvas.style.width = "100%";
   canvas.style.height = "100%";
@@ -837,6 +842,7 @@ async function openPip() {
   pipWindow.document.body.append(canvas);
   el.pipPlaceholder.hidden = false;
   el.pipButton.textContent = "Volver al panel";
+  setPipMinimalScene(true);
   resizeToTarget();
   pipWindow.addEventListener("resize", resizeToTarget);
   pipWindow.addEventListener("pagehide", () => {
@@ -846,8 +852,16 @@ async function openPip() {
     canvas.style.height = "";
     el.pipPlaceholder.hidden = true;
     el.pipButton.textContent = "Ventana flotante";
+    setPipMinimalScene(false);
     resizeToTarget();
   });
+}
+
+// en la ventana flotante solo queremos ver el avatar, nada de piso ni niebla
+// ni halo — así ocupa poco y molesta lo menos posible mientras trabajás.
+function setPipMinimalScene(minimal) {
+  grid.visible = !minimal;
+  scene.fog = minimal ? null : new THREE.Fog(0x0b1119, 4, 12);
 }
 
 function closePip() {
